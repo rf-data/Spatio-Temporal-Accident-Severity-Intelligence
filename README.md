@@ -13,7 +13,8 @@ The goal is to move beyond simple heatmaps and evaluate:
 The project is built as a reproducible data engineering + analytical pipeline.
 
 ### Data
-The data was published by the French Ministry of the Interior ([homepage](https://www.data.gouv.fr/datasets/bases-de-donnees-annuelles-des-accidents-corporels-de-la-circulation-routiere-annees-de-2005-a-2024)) and covers all accidents that have occurred from 2005 to 2024 on French territory. To simplify the analysis, only accidents registered on the French mainland and Corsica were included. All accidents which have taken place in DOM-TOM departments were excluded. 
+The data was published by the French Ministry of the Interior ([homepage](https://www.data.gouv.fr/datasets/bases-de-donnees-annuelles-des-accidents-corporels-de-la-circulation-routiere-annees-de-2005-a-2024)) and covers all accidents that have occurred from 2005 to 2024 on French territory. To simplify the analysis, only accidents registered on the French mainland and Corsica were included. All accidents which have taken place in DOM-TOM departments were excluded.   
+The data is provided on an annual base and spread over several databases (`characteristics`, `places`, `persons`, `vehicles` and `registered vehicles`). During the first steps, only data from `characteristics` from all years available (2005 --> 2024) was used.
 
 ### Architecture
 **Layer 1 – Raw Data**
