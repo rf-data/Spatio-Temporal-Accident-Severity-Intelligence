@@ -10,18 +10,6 @@ import src.utils.general_helper as gh
 import src.postgre.postgre_helper as post
 from configuration.H3_6to9_month_from_charact import config
 
-# Deine nächste Aktion
-# Mach bitte genau diese drei Outputs (damit wir res & timebin finalisieren):
-# H3_RES=7,8,9 jeweils:
-# Anzahl unique H3-Zellen
-# Median/95%/99% von accident_count auf (h3,tbin) (ohne Grid reicht)
-
-# Mit data_full:
-# Anteil accident_count==0
-# data_full["accident_count"].describe()
-# Sag mir: willst du daily oder hourly als erstes (ich empfehle daily, dann hourly als Phase 2).
-
-
 #------------------
 # HELPER FUNCTION
 #------------------
@@ -29,7 +17,6 @@ from configuration.H3_6to9_month_from_charact import config
 def load_sql_data(query):
 
   engine = post.create_engine("postgresql+psycopg2://...")
-
   df = pd.read_sql(query, engine)
 
   return df
@@ -49,6 +36,7 @@ def create_h3(df_in, h3_value):
   df["h3"] = df.apply(lambda r: h3.latlng_to_cell(r["lat_norm"], r["lon_norm"], h3_value), axis=1)
 
   return df
+
 
 def time_binning(df_in, freq="D"):
   # setup logger

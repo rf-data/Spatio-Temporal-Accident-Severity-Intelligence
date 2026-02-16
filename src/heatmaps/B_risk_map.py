@@ -1,19 +1,26 @@
 # imports
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 import numpy as np
 import pandas as pd
 import os
 import geopandas as gpd
+
+import matplotlib
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, mapping
 import h3
+import folium 
+import json
+import branca.colormap as cm
 
 import src.postgre.postgre_helper as post
 import src.utils.general_helper as gh
 import src.utils.path_helper as ph
 from src.core.session import session
 from src.core.logger import create_logger
-from configuration.H3_risk_maps import config
+from configuration.H3_risk_maps_v2 import config
 
 
 # mean(count per time)
@@ -26,9 +33,6 @@ from configuration.H3_risk_maps import config
 def check_table(engine, schema, table_name):
   # setup logger
   logger = session.logger
-
-  # 
-  from sqlalchemy import inspect
   
   inspector = inspect(engine)
   tables = inspector.get_table_names(schema=schema)
@@ -65,6 +69,20 @@ def h3_to_polygon(h3_index):
     coords = h3.cell_to_boundary(str(h3_index))
     coords_lonlat = [(lon, lat) for lat, lon in coords]
     return Polygon(coords_lonlat)
+
+
+def h3_to_geojson_feature(h3_index, value, resolution):
+    polygon = h3_to_polygon(h3_index)
+
+    return {
+        "type": "Feature",
+        "geometry": mapping(polygon),
+        "properties": {
+            "h3_index": h3_index,
+            "value": value,
+            "resolution": resolution
+        }
+    }
 
 
 def load_single_h3_data(res, freq):
@@ -116,8 +134,9 @@ def load_create_all_h3_df(res_list, freq_list):
     # save df
     folder = os.getenv("PATH_PROCESSED")
     df_path = f"{folder}/df_h3_all_res_freq.csv"
-    df_all.to_csv(df_path)
-    logger.info("df_h3_all_res_freq saved to %s", df_path)
+    # df_all.to_csv(df_path)
+    logger.info("df_h3_all_res_freq saved to %s", 
+                ph.shorten_path(df_path))
 
     return df_all
 
@@ -145,17 +164,6 @@ def h3_heatmap_plt(df, res_list): #  freq_list):
         logger.info("Converted 'res_list'(dtype=%s) to list.", type(res_list))
         res_list = [res_list]
 
-    # (1)
-    # fig, axes = plt.subplots(
-    #     1,
-    #     len(res_list),
-    #     figsize=(6 * len(res_list), 6),
-    #     constrained_layout=True
-    #     )
-
-    # if len(res_list) == 1:
-    #     axes = [axes]
-    
     plot_folder = os.getenv("PATH_PLOT") 
     heatmap_folder = f"{plot_folder}/risk_heatmaps"
     ph.ensure_dir(heatmap_folder)
@@ -222,213 +230,145 @@ def h3_heatmap_plt(df, res_list): #  freq_list):
             plt.close(fig)
             logger.info("Heatmap saved to %s", ph.shorten_path(plot_name))
 
-    # all_heatmap_path = f"{heatmap_folder}/h3_accident_heatmap_res4to9.png"
-
-    # plt.savefig(all_heatmap_path, dpi=300, bbox_inches="tight")
-    # logger.info("Heatmap saved to %s", ph.shorten_path(all_heatmap_path))
-    
-    # if verbose:
-    #     plt.show()
-    # else:
-    #     plt.close(fig)
-    
+    return
 
 
-    # return
-
-def h3_heatmap_fol(df, res_list):
-
-
-    # This example uses heatmaps to visualize the density of volcanoes
-    # # which is more in some parts of the world compared to others.
-
-    # from folium import plugins
-
-    # map = folium.Map(location=[15, 30], tiles="Cartodb dark_matter", zoom_start=2)
-
-    # heat_data = [[point.xy[1][0], point.xy[0][0]] for point in geo_df.geometry]
-
-    # heat_data
-    # plugins.HeatMap(heat_data).add_to(map)
-
-    # map
-    return 
-
-def retrieve_base_stat(value, conn):
-    # load variable from session
-    inflate = session.inflate
-
-    # query    
-    base_stat = f"""
-        SELECT
-            COUNT(*) AS rows,
-            MIN(n_accidents) AS MIN,
-            AVG(n_accidents) AS MEAN,
-            VAR_SAMP(n_accidents) AS VAR, 
-            STDDEV_SAMP(n_accidents) AS STD, 
-            VAR_SAMP(n_accidents) / STDDEV_SAMP(n_accidents) AS RATIO_VAR_MEAN,
-            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY n_accidents) AS Q25,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY n_accidents) AS MEDIAN, 
-            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY n_accidents) AS Q75,
-            PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY n_accidents) AS Q90,
-            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY n_accidents) AS Q95,
-            PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY n_accidents) AS Q99,
-            MAX(n_accidents) AS MAX,
-            SUM(CASE WHEN n_accidents = 0 THEN 1 ELSE 0 END) * 1.0 AS ZERO_COUNT, 
-            SUM(CASE WHEN n_accidents = 0 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS ZERO_SHARE
-        FROM accidents.h3_res{value}_month{"_ZeroInf" if inflate else ""};
-        """
-
-    result = conn.execute(text(base_stat))
-    df = pd.DataFrame(result.fetchall())
-
-    return df
-
-# retrieve basic statistics from SQL tables
-def create_base_stat_df(h3_values, freq):
+def h3_heatmap_fol(df_in, 
+                   res_list,
+                   center=[48.5, 2.2],
+                   zoom_start=4):     
     # setup logger
     logger = session.logger
+    freq = session.freq
 
-    # setup DB_engine
-    engine = post.get_engine()
+    if not isinstance(res_list, list):
+        logger.info("Converted 'res_list'(dtype=%s) to list.", type(res_list))
+        res_list = [res_list]
+        
+    # --- Global log scale ---
+    df_all = df_in.copy()
+    df_all["log_count"] = np.log1p(df_all["n_accidents"])
+
+    global_max = df_all["log_count"].max()
+
+    # --- Base map ---
+    map = folium.Map(location=center, 
+                     tiles="Cartodbpositron",        # "Cartodb dark_matter"
+                     zoom_start=zoom_start)
     
-    h3_dict = {}
-    with engine.begin() as conn:
-        for val in h3_values:
-            df = retrieve_base_stat(val, conn)
-            
-            df["res"] = val
-            df["freq"] = freq
-            h3_dict[f"res_{val}"] = df
+    # 
+    for res in res_list:
+        feats = create_feats_from_df(df_all, res)
+        geojson = {
+            "type": "FeatureCollection",
+            "features": feats
+        }
 
-    h3_stat_merge = pd.concat(h3_dict.values())
-    describe_save_h3_df(h3_stat_merge, 
-                        f_name="df_h3_base_stats",
-                        idx_new=["res", "freq"])
+        layer = folium.FeatureGroup(name=f"Resolution {res}")
 
-    return
+        geo_json, color_map = customise_geojson(geojson, global_max)
+        geo_json.add_to(layer)
+        color_map.add_to(map)
+
+        layer.add_to(map)
+
+    folium.LayerControl(collapsed=False).add_to(map)
+
+    plot_folder = os.getenv("PATH_PLOT")
+    heatmaps = f"{plot_folder}/risk_heatmaps"
+    ph.ensure_dir(heatmaps)
+
+    resolutions = "_".join(str(r) for r in res_list)
+    plot_name = (f"{heatmaps}/h3_acci_heatmap_fol_res{resolutions}_{freq}.html")
     
+    map.save(plot_name)
+    logger.info("Folium map saved to %s", ph.shorten_path(plot_name))
 
-def describe_save_h3_df(df, f_name, idx_new=None):
+    return map
+
+
+def customise_geojson(geojson, global_max):
     # setup logger
     logger = session.logger
 
     # 
-    if idx_new is not None:
-        df.set_index(idx_new, inplace=True)
+    colormap = cm.linear.YlOrRd_09.scale(0, global_max)
+    colormap.caption = "Log(Accidents + 1)"
 
-    for col in ["mean_count", "var_count", 
-                "std_count", "var_mean_ratio", 
-                "zero_count", "zero_share"]:
-        df[col] = df[col].astype(float).round(3)
+    geo = folium.GeoJson(
+            geojson,
+            style_function=lambda feature: {
+                "fillColor": colormap(feature["properties"]["value"]),
+                "color": None,
+                "weight": 0,
+                "fillOpacity": 0.3
+            },
+            tooltip=folium.GeoJsonTooltip(
+                fields=["h3_index", "value"],
+                aliases=["H3 Index:", "Log Accidents:"]
+            )
+        )
 
-    logger.info("h3_stat_merge -- INFO ---\n%s\n", df.info()) 
-    logger.info("h3_stat_merge -- OVERVIEW ---\n%s\n", df.T)
-    
-    folder = os.getenv("PATH_PROCESSED")
-    df_path = f"{folder}/{f_name}.csv"
-    df.to_csv(df_path)
-    logger.info("Saved df '%s' to %s", 
-                f_name,
-                ph.shorten_path(df_path)) 
+    return geo, colormap
 
-    return
+
+def create_feats_from_df(df, res):
+    # setup logger
+    logger = session.logger
+
+    # 
+    df_res = (
+        df[df["resolution"] == res]
+        .groupby("h3_index")["n_accidents"]
+        .sum()
+        .reset_index()
+        .copy()
+        )
+
+    df_res["log_count"] = np.log1p(df_res["n_accidents"])
+
+    features = []
+
+    for _, row in df_res.iterrows():
+        feature = h3_to_geojson_feature(
+            row["h3_index"],
+            row["log_count"],
+            res
+        )
+        features.append(feature)
+
+    return features
+
 
 def create_h3_heatmap():
     # load env variables
     gh.load_env_vars()
 
     session.load_config(config)
-    log_name = session.log_name # "ETL_CHARACTERISTICS"
-    name_logfile = session.log_file # "etl_characteristics"
+    log_name = session.log_name 
+    name_logfile = session.log_file
     
-    h3_values = session.h3_values
-    res_list = session.resolution
-    freq_list = session.freq
-
     # load logger
     logger = create_logger(name=log_name,
-                            file_name=name_logfile)
+                        file_name=name_logfile)
 
     session.logger = logger
 
-    # compute base statistics for each H3 resolution and frequency
-    create_base_stat_df(h3_values, freq_list)
-
     # 
+    res_list = session.h3_values
+    freq_list = session.freq
+
     all_h3_df = load_create_all_h3_df(res_list, freq_list)
 
     # 
-    if "plt" in session.plotting:
-        plot_h3_heatmap_plt(all_h3_df, res_list)    
+    # if "plt" in session.plotting:
+    #     h3_heatmap_plt(all_h3_df, res_list)    
 
-    if "fol" in session.plotting:
-        plot_h3_heatmap_plt(all_h3_df, res_list) 
+    if "folium" in session.plotting:
+        h3_heatmap_fol(all_h3_df, res_list) 
 
     return 
 
+
 if __name__ == "__main__":
     create_h3_heatmap()
-
-
-    # res_list = session.resolution
-    # h3_path = "/home/robfra/0_Portfolio_Projekte/Road_accidents/data/data_processed/df_h3_all_res_freq.csv"
-    # df = pd.read_csv(h3_path)
-    # plot_h3_heatmap(df, res_list)   # , freq_list)
-
-
-"""
-📐 Wie groß sind H3-Zellen?
-
-H3 ist global definiert. Die mittlere Zellfläche pro Resolution ist bekannt.
-
-Die ungefähren mittleren Flächen:
-
-Resolution	Ø Fläche (km²)	Ø Kantenlänge (km)
-4	~1770 km²	~25 km
-5	~252 km²	~9.4 km
-6	~36 km²	~3.6 km
-7	~5.1 km²	~1.4 km
-8	~0.73 km²	~0.53 km
-9	~0.10 km²	~0.20 km
-
-Das sind Mittelwerte (wegen icosahedral distortion leicht variierend).
-"""
-
-"""
-# 1️⃣ Matplotlib + h3 (schnelle EDA)
-# 2️⃣ Folium oder Plotly (interaktive Karten)
-
-📦 Module-Übersicht
-🔹 h3-py (unbedingt)
-
-Um Polygone zu generieren:
-h3.cell_to_boundary(h3_index)
-
-🔹 GeoPandas
-Für:
-GeoDataFrame
-CRS Handling
-einfache Plot-Funktion
-
-import geopandas as gpd
-from shapely.geometry import Polygon
-
-🔹 Matplotlib
-Für:
-statische Heatmaps
-schnelle Kontrolle
-gdf.plot(column="n_accidents", cmap="Reds", legend=True)
-
-🔹 Folium (Leaflet)
-Für:
-interaktive Karten
-Hover-Info
-Präsentation
-Sehr geeignet für Portfolio.
-
-🔹 Plotly (optional)
-Für:
-moderne interaktive Darstellung
-Integration in Streamlit
-"""

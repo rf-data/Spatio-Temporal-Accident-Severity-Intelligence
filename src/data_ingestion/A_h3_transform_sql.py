@@ -423,38 +423,36 @@ def h3_transformation():
   session.logger = logger
 
   # (0) load data + reduced to necessary columns 
-  # cols = session.cols_needed
+  cols = session.cols_needed
   
-  # f_path = f"/home/robfra/0_Portfolio_Projekte/Road_accidents/data/data_processed/df_character_norm.csv"
+  folder = os.getenv("PATH_PROCESSED")
+  f_path = f"{folder}/df_character_norm.csv"
 
-  # df_pre = pd.read_csv(f_path,
-  #                   low_memory=False)
-  # df = df_pre[cols].copy()
+  df_pre = pd.read_csv(f_path,
+                    low_memory=False)
+  df = df_pre[cols].copy()
 
   # (1) apply geo_grid (h3)
   h3_values = session.h3_values
 
-  # if h3_values is None:
-  #   logger.error("'H3_values' is None.")
-  #   raise ValueError
+  if h3_values is None:
+    logger.error("'H3_values' is None.")
+    raise ValueError
   
-  # df_h3 = create_h3_grid(df, h3_values)
+  df_h3 = create_h3_grid(df, h3_values)
 
-  # # save dfs
-  # folder = os.getenv("PATH_PROCESSED")
-  # df_path = f"{folder}/df_h3.csv"
+  # save dfs
+  folder = os.getenv("PATH_PROCESSED")
+  df_path = f"{folder}/df_h3.csv"
 
-  # df_h3.to_csv(df_path)
-  # logger.info("df_h3 saved")
+  df_h3.to_csv(df_path)
+  logger.info("df_h3 saved")
 
-  # # (2) add cols in SQL_db
-  # # folder = os.getenv("PATH_PROCESSED")
-  # # h3_path = f"{folder}/df_h3.csv"
-  # # df_h3 = pd.read_csv(h3_path)
-  # add_h3_cols(h3_values)
+  # (2) add cols in SQL_db
+  add_h3_cols(h3_values)
 
-  # logger.info("Shape of df_h3: %s\n", df_h3.shape)
-  # fill_h3_columns(df_h3)
+  logger.info("Shape of df_h3: %s\n", df_h3.shape)
+  fill_h3_columns(df_h3)
 
   freqence = session.freq 
   if not isinstance(freqence, list):
@@ -476,245 +474,3 @@ def h3_transformation():
 
 if __name__ == "__main__":
   h3_transformation()
-
-
-  # 
-  # msg = f"""
-  #   CREATE TABLE {scheme}.h3_res{value}_{freq}_full AS
-  #   SELECT
-  #       h.h3_res{value},
-  #       t.{freq}
-  #   FROM all_h3 h
-  #   CROSS JOIN all_{days} t;
-  # """
-
-# def create_time_index(freq):
-#   # setup logger
-#   logger = session.logger
-
-#   # setup SQL_engine 
-#   engine = post.get_engine()
-
-#   # query
-#   idx = f"""
-#     CREATE TEMP TABLE all_{freq} AS
-#     SELECT generate_series(
-#         (SELECT MIN(date(datetime)) FROM {table}),
-#         (SELECT MAX(date(datetime)) FROM {table}),
-#         interval '1 {freq}'
-#     )::date AS {freq};
-#     """
-  
-#   # 
-#   with engine.begin() as conn:
-#     conn.execute(text(idx))
-
-#   return 
-
-# def load_sql_data(query):
-#   engine = post.create_engine("postgresql+psycopg2://...")
-#   df = pd.read_sql(query, engine)
-#   return df
-
-
-# def join_counts():
-#   add = f"""
-#     ALTER TABLE accidents.h3_res8_daily_full
-#     ADD COLUMN n_accidents INTEGER DEFAULT 0;
-#     """
-  
-#   fill = f"""
-#     UPDATE accidents.h3_res8_daily_full f
-#     SET n_accidents = c.n_accidents
-#     FROM accidents.h3_res8_daily c
-#     WHERE f.h3_res8 = c.h3_res8
-#       AND f.day = c.day;
-#     """
-
-#   # 
-#   with engine.begin() as conn:
-#     conn.execute(text(idx))
-
-#   return 
-  
-
-# def create_aggregation_tbl(name):
-#   # setup logger
-#   logger = session.logger
-
-#   # setup SQL_engine 
-#   engine = post.get_engine()
-
-#   # 
-#   scheme = os.getenv("TABLE_SCHEME")    # "accidents"
-#   table = f"{scheme}.{name}"
-
-#   tbl_dict = {
-#       "h3_index": "TEXT",
-#       "year": "SMALLINT",
-#       "month": "SMALLINT",
-#       "n_accidents": "INTEGER",
-#       "PRIMARY KEY": "(h3_index, year, month)"
-#       }
-  
-#   cols = [f"{key} {value}," for key, value in tbl_dict.items()]
-#   cols_joined = ", ".join(cols)
-
-#   creation = f"""
-#     CREATE TABLE {table} (
-#       {cols_joined}
-#     );
-#     """
-  
-#   return 
-
-  # # (1) define time axis
-  # time_axis = """
-  # CREATE TEMP TABLE all_days AS
-  # SELECT generate_series(
-  #     (SELECT MIN(date(datetime)) FROM accidents.characteristics),
-  #     (SELECT MAX(date(datetime)) FROM accidents.characteristics),
-  #     interval '1 day'
-  # )::date AS day;
-  # """
-  
-  # # (2)
-  # h3_value = ""
-
-  
-
-  # h3_x_tbl = f"""
-  # CREATE TABLE accidents.h3_accidents_res{h3_value} (
-  #     h3_res{h3_value} TEXT,
-  #     year SMALLINT,
-  #     n_accidents INTEGER,
-  #     PRIMARY KEY (h3_res{h3_value}, year)
-  # );
-  # """
-
-  # h3_x_idx = f"""
-  # CREATE INDEX idx_h3_res{h3_value}
-  # ON accidents.h3_accidents_res{h3_value} (h3_res{h3_value});
-  # """
-  
-  # h3_d_tbl = f"""
-  # CREATE TEMP TABLE all_h3 AS
-  # SELECT DISTINCT h3_res{h3_value}
-  # FROM accidents.h3_res{h3_value}_daily;
-  # """
-
-
-
-# def extract_h3_cells(value, freq):
-#   # setup logger
-#   logger = session.logger
-
-#   # setup SQL_engine 
-#   engine = post.get_engine()
-
-#   hi = f"""
-#     CREATE TEMP TABLE all_h3_{freq} AS
-#     SELECT DISTINCT h3_res{value}
-#     FROM {scheme}.h3_res{value}_{freq};
-#     """
-
-#   # 
-#   with engine.begin() as conn:
-#     conn.execute(text(idx))
-
-#   return 
-
-
-  # #   df = load_sql_data(h3_query)
-  # f_path = f"/home/robfra/0_Portfolio_Projekte/Road_accidents/data/data_processed/df_character_norm.csv"
-  # df = pd.read_csv(f_path,
-  #                   low_memory=False)
-
-  # # (2) creating time_bin_column
-  # df_tbin = time_binning(df, freq="D")
-
-  # # (3) creating h3_grid
-  # # if h3_test == True: 
-  # #   h3_values = session.h3_values
-  # #   h3_grid_test(h3_values)
-  # grid_dict = {}
-  # for h3_value in [7]:  # , 8, 9
-  #   logger.info("Using H3_resolution=%s", h3_value)
-  #   df_h3 = create_h3(df_tbin, h3_value)
-  #   grid_dict[f"RES_{h3_value}"] = df_h3
-
-  # for name, df in grid_dict.items():
-  #   # (4) compile accidents per 'h3 x tbin'
-  #   logger.info("Getting accident's incidence (%s)",
-  #               name)
-  #   df_2 = get_accidents_incidence(df)
-
-  #   # (5) Before_Sparsity_check on dfs
-  #   logger.info("BEFORE INFLATION -- Sparsity check on %s", 
-  #               name)
-  #   sparsity_check(df_2)
-
-  #   # (6) Zero Inflation
-  #   df_zero = zero_inflation(df, df_2)
-
-  #   # (7) After_Sparsity_check on dfs
-  #   logger.info("AFTER INFLATION -- Sparsity check on %s", 
-  #               name)
-  #   sparsity_check(df_zero)
-    
-  
-#   
-# ,id,
-# year,month,day,
-# hour,time_clean, weekday,is_weekend,
-# light conditions,localisation,intersection type,
-# weather,collision type,
-# commune,department,
-# lat_norm,lon_norm
-  # (5) Feature-Aggregation (aus deinen vorhandenen Spalten)
-  # # (A) Zeitfeatures direkt aus tbin
-  # g["weekday"] = g["tbin"].dt.weekday
-  # g["is_weekend"] = (g["weekday"] >= 5).astype(int)
-  # g["month"] = g["tbin"].dt.month
-  # g["year"] = g["tbin"].dt.year
-"""
-RES = 7:
-rows:        595_390
-zero_share:  0.0
-
-count    595390.000000
-mean          1.059479
-std           0.283725
-min           1.000000
-25%           1.000000
-50%           1.000000
-75%           1.000000
-max           9.000000
-  
-RES = 8:
-rows:        622_801
-zero_share:  0.0
-  
-count    622801.000000
-mean          1.012848
-std           0.116323
-min           1.000000
-25%           1.000000
-50%           1.000000
-75%           1.000000
-max           4.000000
-
-RES = 9:
-rows:        628_393
-zero_share:  0.0
-
-count    628393.000000
-mean          1.003835
-std           0.062628
-min           1.000000
-25%           1.000000
-50%           1.000000
-75%           1.000000
-max           4.000000
-
-"""
