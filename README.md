@@ -13,7 +13,7 @@ The goal is to move beyond simple heatmaps and evaluate:
 The project is built as a reproducible data engineering + analytical pipeline.
 
 ### Data
-The data was published by the French Ministry of the Interior (https://www.data.gouv.fr/datasets/bases-de-donnees-annuelles-des-accidents-corporels-de-la-circulation-routiere-annees-de-2005-a-2024)[homepage] and covers all accidents that have occurred from 2005 to 2024 on French territory. To simplify the analysis, only accidents registered on the French mainland and Corsica were included. All accidents which have taken place in DOM-TOM departments were excluded. 
+The data was published by the French Ministry of the Interior ([homepage](https://www.data.gouv.fr/datasets/bases-de-donnees-annuelles-des-accidents-corporels-de-la-circulation-routiere-annees-de-2005-a-2024)) and covers all accidents that have occurred from 2005 to 2024 on French territory. To simplify the analysis, only accidents registered on the French mainland and Corsica were included. All accidents which have taken place in DOM-TOM departments were excluded. 
 
 ### Architecture
 **Layer 1 – Raw Data**
@@ -32,8 +32,8 @@ The data was published by the French Ministry of the Interior (https://www.data.
 
 **Layer 4 – Analysis & Visualization**
 - GeoPandas heatmaps
-- Log-scaled and linear/non-scaled risk visualization (/home/robfra/0_Portfolio_Projekte/Road_accidents/data/plots/risk_heatmaps)[folder]
-- Resolution comparison (/home/robfra/0_Portfolio_Projekte/Road_accidents/data/plots/risk_heatmaps/h3_acci_heatmap_fol_res4_5_6_month.html)[interactive map]
+- Log-scaled and linear/non-scaled risk visualization (see plots in [folder](./data/plots/risk_heatmaps))
+- Resolution comparison (see [interactive map](./data/plots/risk_heatmaps/h3_acci_heatmap_fol_res4_5_6_month.html))
 - Quantitative evaluation metrics
 
 **Key Methodological Components**
