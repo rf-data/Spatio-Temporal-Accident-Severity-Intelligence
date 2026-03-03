@@ -7,21 +7,20 @@
 config = {
     "log_name": "H3_CHARACTERISTICS",
     "log_file": "H3_characteristics",
-    "h3_values": [6, 7, 8, 9], 
+    "h3_values": [6, 7, 8, 9],
     "cols_needed": [
-            "id",
-            "lat_norm", 
-            "lon_norm", 
-            "datetime", 
-            "light conditions", 
-            "intersection type", 
-            "weather", 
-            "collision type"
-            ],
-    "tmp_tbl": "tmp_h3", 
-    "freq": "month",  
+        "id",
+        "lat_norm",
+        "lon_norm",
+        "datetime",
+        "light conditions",
+        "intersection type",
+        "weather",
+        "collision type",
+    ],
+    "tmp_tbl": "tmp_h3",
+    "freq": "month",
     "p_key": "id_accid",
     "scheme": "accidents",
-    "src_table": "characteristics"
+    "src_table": "characteristics",
 }
-

@@ -1,4 +1,4 @@
-# imports 
+# imports
 from sqlalchemy import text
 
 # ---------------------
@@ -80,20 +80,25 @@ H3_PREP_VIEW = text("""
 # FUNCTIONS
 # ---------------------
 
+
 def make_rush_hour(conn):
     conn.execute(RUSH_HOUR)
-    return 
+    return
+
 
 def view_pre_h3(conn):
     conn.execute(H3_PREP_VIEW)
+
 
 def check_row_count(conn, min_rows=500_000):
     n = conn.execute(ROW_COUNT).scalar()
     assert n >= min_rows, f"Too few rows: {n}"
 
+
 def check_geo_ratio(conn, min_ratio=0.45):
     ratio = conn.execute(GEO_RATIO).scalar()
     assert ratio >= min_ratio, f"Geo ratio too low: {ratio:.2f}"
+
 
 def check_calender_range(conn):
     start, end = conn.execute(YEAR_RANGE).one()

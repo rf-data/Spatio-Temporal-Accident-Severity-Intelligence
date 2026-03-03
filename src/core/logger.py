@@ -1,12 +1,13 @@
-## imports 
+## imports
 import logging
 import sys
 import os
-from pathlib import Path 
-from datetime import datetime 
+from pathlib import Path
+from datetime import datetime
 
-import src.utils.general_helper as gh 
+import src.utils.general_helper as gh
 import src.utils.path_helper as ph
+
 
 def has_file_handler(logger, log_path):
     for h in logger.handlers:
@@ -15,18 +16,21 @@ def has_file_handler(logger, log_path):
                 return True
     return False
 
+
 def log_header(logger, title: str, level="info"):
     """
     Aufruf: log_header(self.logger, "START ESCALATION CHECK")
     """
     header = (
         "\n"
-        + "=" * 50 + "\n"
+        + "=" * 50
+        + "\n"
         + f"--- {title} --- {datetime.now():%Y-%m-%d %H:%M:%S} ---\n"
         + "=" * 50
     )
 
     getattr(logger, level)(header)
+
 
 def log_section(logger, title):
     """
@@ -35,10 +39,8 @@ def log_section(logger, title):
     logger.info("")
     logger.info("=" * 50)
     logger.info(
-        "--- %s --- %s ---",
-        title, 
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
+        "--- %s --- %s ---", title, datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
     logger.info("=" * 50 + "\n")
 
     # else:
@@ -48,12 +50,9 @@ def log_section(logger, title):
     #     print("=" * 50 + "\n")
 
 
-def create_logger(name: str,
-                  file_name: str, 
-                  folder: str | Path | None = None,
-                  level: str="info"
-                  ) -> logging.Logger:
-
+def create_logger(
+    name: str, file_name: str, folder: str | Path | None = None, level: str = "info"
+) -> logging.Logger:
     """
     Create a configured logger with stdout + optional file logging.
 
@@ -70,13 +69,13 @@ def create_logger(name: str,
     """
 
     level_dict = {
-        "not_set": logging.NOTSET, 
+        "not_set": logging.NOTSET,
         "debug": logging.DEBUG,
         "info": logging.INFO,
-        "warning": logging.WARNING, 
-        "error": logging.ERROR, 
-        # "exception": logging.exception, 
-        "critical": logging.CRITICAL, 
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+        # "exception": logging.exception,
+        "critical": logging.CRITICAL,
     }
 
     log_level = level_dict.get(level.lower(), logging.INFO)
@@ -85,9 +84,7 @@ def create_logger(name: str,
     logger.setLevel(log_level)
     logger.propagate = False  # VERY important with Uvicorn / Streamlit
 
-    formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
     # --- stdout handler (always) ---
     stream_handler = logging.StreamHandler(sys.stdout)
@@ -100,22 +97,18 @@ def create_logger(name: str,
         if not folder:
             gh.load_env_vars()
             folder = os.getenv("LOGS", "logs")
-        
+
         log_path = ph.ensure_dir(folder)
         log_file = log_path / f"{file_name}.log"
-        
+
         # check if file handler already exists
         if not has_file_handler(logger, log_file):
-            file_handler = logging.FileHandler(
-                                log_file, 
-                                mode="a",
-                                encoding="utf-8"
-                                    )
+            file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
             file_handler.setLevel(log_level)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
-  
-    return logger 
+
+    return logger
 
 
 # if __name__ == "__main__":

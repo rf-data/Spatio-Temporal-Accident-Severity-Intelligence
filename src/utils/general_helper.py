@@ -10,6 +10,7 @@ import hashlib
 
 from src.core.session import session
 
+
 def snapshot_single_function(fn: Callable) -> dict:
     src = inspect.getsource(fn)
     return {
@@ -19,12 +20,15 @@ def snapshot_single_function(fn: Callable) -> dict:
         "source": src,
         "sha256": hashlib.sha256(src.encode("utf-8")).hexdigest(),
     }
+
+
 # def describe_function(fn):
 #     return {
 #         "module": fn.__module__,
-    
+
 #         "name": fn.__name__,
 #     }
+
 
 def snapshot_dependent_functions(
     root_fn: Callable,
@@ -41,10 +45,10 @@ def snapshot_dependent_functions(
 
     return snapshot
 
+
 # def hash_function_source(fn) -> str:
 #     src = inspect.getsource(fn)
 #     return src, hashlib.sha256(src.encode("utf-8")).hexdigest()
-
 
 
 def iter_chunks(df, chunk_size=25):
@@ -52,7 +56,7 @@ def iter_chunks(df, chunk_size=25):
         yield df.iloc[start : start + chunk_size]
 
 
-def load_env_vars():
+def load_env_vars(name=".env"):
     """
     Load environment variables from .env files if available.
     """
@@ -61,21 +65,30 @@ def load_env_vars():
         load_dotenv(session_path, override=True)
         print("Variables from .env.session loaded")
 
-    env_path = find_dotenv()
-    if env_path and not session.env_loaded:
-        load_dotenv(env_path)
-        print("Variables from .env loaded")
+    if name == ".env":
+        env_path = find_dotenv()
+        if env_path and not session.env_loaded:
+            load_dotenv(env_path)
+            print(f"Variables from {name} loaded")
+            session.env_loaded = True
 
-    session.env_loaded = True
+    else:
+        env_path = find_dotenv(file_name=name)
+        if env_path and not session.env_loaded:
+            load_dotenv(env_path)
+            print(f"Variables from {name} loaded")
+
     session.save_session()
-
 
 
 def get_git_commit():
     try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            stderr=subprocess.DEVNULL
-        ).decode("utf-8").strip()
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+            )
+            .decode("utf-8")
+            .strip()
+        )
     except Exception:
         return "unknown"

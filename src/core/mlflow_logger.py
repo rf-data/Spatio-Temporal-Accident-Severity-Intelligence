@@ -7,7 +7,7 @@ import mlflow
 
 # from utils.experiment_logger_impl import ExperimentLogger
 import utils.general_helper as gh
-import core.logger as log 
+import core.logger as log
 from core.session import session
 import utils.file_helper as fh
 import utils.path_helper as ph
@@ -16,12 +16,13 @@ import utils.path_helper as ph
 # MLflow Experiment Logger
 # --------------
 
+
 @dataclass
 class ExperimentLogger:
     experiment_name: str
-    artifact_location: Path | None = None   # field(default_factory=Path)
+    artifact_location: Path | None = None  # field(default_factory=Path)
     backup_dir: Path = Path(f"{ph.find_project_root()}/mlflow/backups")
-    
+
     tags: Dict[str, object] = field(default_factory=dict)
     params: Dict[str, object] = field(default_factory=dict)
     metrics: Dict[str, float] = field(default_factory=dict)
@@ -33,11 +34,11 @@ class ExperimentLogger:
     def __post_init__(self):
         root = ph.find_project_root()
         project_name = os.getenv("PROJECT_NAME", "default_project")
-        folder = f"{root}/mlflow/logs"    
+        folder = f"{root}/mlflow/logs"
 
-        self.logger = log.create_logger(f"mlflow_{project_name}", 
-                                        "mlflow", 
-                                        folder=folder)
+        self.logger = log.create_logger(
+            f"mlflow_{project_name}", "mlflow", folder=folder
+        )
 
     def load_latest_backup(self, folder: Path | None = None):
         folder = Path(folder or self.backup_dir / self.experiment_name)
@@ -50,12 +51,11 @@ class ExperimentLogger:
         timestamp = latest.stem.replace("_params", "")
 
         self.load_logger(folder, timestamp)
-    
 
     def load_logger(self, folder: Path, timestamp: str):
         """
         Load logger state (tags, params, metrics, texts) from a local backup.
-        
+
         Parameters
         ----------
         folder : Path
@@ -69,8 +69,8 @@ class ExperimentLogger:
         missing = False
         attributes = ["params", "metrics", "texts", "tags"]
 
-        for attr in attributes:  
-            path = folder / f"{timestamp}_{attr}.json"  
+        for attr in attributes:
+            path = folder / f"{timestamp}_{attr}.json"
 
             if path.exists():
                 setattr(self, attr, fh.load_dict(path))
@@ -80,13 +80,11 @@ class ExperimentLogger:
                 missing = True
 
         if missing:
-            self.logger.warning(
-                f"Not all backups found in {folder}")
+            self.logger.warning(f"Not all backups found in {folder}")
             raise FileNotFoundError()
 
         self.logger.info(
-            f"ExperimentLogger state restored from backup "
-            f"(timestamp={timestamp})"
+            f"ExperimentLogger state restored from backup " f"(timestamp={timestamp})"
         )
         # if metrics_path.exists():
         #     self.metrics = fh.load_dict(metrics_path)
@@ -99,7 +97,7 @@ class ExperimentLogger:
         # else:
         #     self.logger.warning(f"No texts backup found at {texts_path}")
         #     missing = True
-    
+
     def local_backup(self, folder=None):
         """Saves all logged data to local files for backup purposes."""
         if not folder:
@@ -138,12 +136,12 @@ class ExperimentLogger:
 
     def log_model(self, model_name, model, exemple_df):
         mlflow.sklearn.log_model(
-                    sk_model=model,
-                    name=model_name,
-                    # artifact_path=path,
-                    input_example=exemple_df.iloc[:5]
-                    )
-        
+            sk_model=model,
+            name=model_name,
+            # artifact_path=path,
+            input_example=exemple_df.iloc[:5],
+        )
+
     def log_param(self, key: str, value: object):
         self.params[key] = value
 
@@ -157,20 +155,16 @@ class ExperimentLogger:
         gh.load_env_vars()
         mlflow_uri = os.getenv("MLFLOW_TRACKING_URI")
         mlflow.set_tracking_uri(mlflow_uri)
-        
-        exp = mlflow.get_experiment_by_name(
-            self.experiment_name
-            )
+
+        exp = mlflow.get_experiment_by_name(self.experiment_name)
 
         if exp is None:
             mlflow.create_experiment(
-                    name=self.experiment_name,
-                    artifact_location=str(self.artifact_location)
-                                    )
+                name=self.experiment_name, artifact_location=str(self.artifact_location)
+            )
 
-        self.logger.info("Setting up MLflow experiment: %s", 
-                        self.experiment_name)
-        
+        self.logger.info("Setting up MLflow experiment: %s", self.experiment_name)
+
         mlflow.set_experiment(self.experiment_name)
 
     # def setup_experiment(self):
@@ -180,7 +174,7 @@ class ExperimentLogger:
     #             artifact_location=str(self.artifact_location)
     #         )
     #     mlflow.set_experiment(self.experiment_name)
-    
+
     # def set_artifact_location(self, folder=None):
     #     if not folder:
     #         self.artifact_location = Path("home/robfra/0_Portfolio_Projekte/LLM/mlflow/artifacts")
@@ -192,10 +186,9 @@ class ExperimentLogger:
 
     def flush(self, run_name: str):
         self.logger.info(
-                f"Starting MLflow run: {run_name} "
-                f"(experiment={self.experiment_name})"
-                        )
-        
+            f"Starting MLflow run: {run_name} " f"(experiment={self.experiment_name})"
+        )
+
         with mlflow.start_run(run_name=run_name) as run:
             run_id = run.info.run_id
 
@@ -221,15 +214,17 @@ class ExperimentLogger:
                 mlflow.set_tag(k, v)
                 self.logger.info(f"[TAG] {k}={v}")
 
-            self.logger.info("MLflow run finished successfully: %s (%s)", 
-                             run_name, run_id
-                            )
+            self.logger.info(
+                "MLflow run finished successfully: %s (%s)", run_name, run_id
+            )
+
 
 # ---------------
 # Main MLflow logging function
 # ---------------
 
 _experiment_logger: ExperimentLogger | None = None
+
 
 def get_experiment_logger(
     experiment_name: str | None = None,

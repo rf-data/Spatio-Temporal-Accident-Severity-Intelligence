@@ -1,4 +1,3 @@
-
 config = {
     "log_name": "H3_RISK_MAP",
     "log_file": "H3_risk_map",

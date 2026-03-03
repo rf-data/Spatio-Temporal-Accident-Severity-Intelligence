@@ -6,18 +6,17 @@ import pandas as pd
 
 from src.core.session import session
 from src.core.logger import create_logger
-import src.postgre.postgre_helper as post
+import src.utils.postgre_helper as post
 import src.utils.general_helper as gh
 import src.utils.path_helper as ph
 from configuration.H3_evaluate_res import config
 
 
-def retrieve_base_stat(table, 
-                       conn):
+def retrieve_base_stat(table, conn):
     # setup logger
     logger = session.logger
 
-    # query    
+    # query
     base_stat = f"""
         SELECT
             COUNT(*) AS rows,
@@ -38,17 +37,15 @@ def retrieve_base_stat(table,
         FROM {table};
         """
 
-    logger.info("Start compiling base statistics for table '%s'", 
-                table)
-                
+    logger.info("Start compiling base statistics for table '%s'", table)
+
     result = conn.execute(text(base_stat))
     df = pd.DataFrame(result.fetchall())
 
     return df
 
 
-def calculate_entropy(table, 
-                      conn):
+def calculate_entropy(table, conn):
     # setup logger
     logger = session.logger
 
@@ -68,8 +65,7 @@ def calculate_entropy(table,
         FROM frequence, total;
         """
 
-    logger.info("Start calculating entropy from table '%s'", 
-                table)
+    logger.info("Start calculating entropy from table '%s'", table)
 
     result = conn.execute(text(query_entropy))
     entropy = result.scalar()
@@ -77,8 +73,7 @@ def calculate_entropy(table,
     return entropy
 
 
-def calculate_gini(table, 
-                   conn):
+def calculate_gini(table, conn):
     # setup logger
     logger = session.logger
 
@@ -104,19 +99,16 @@ def calculate_gini(table,
             END AS gini
         FROM agg;
         """
-    
-    logger.info("Start calculating Gini coefficient from table '%s'", 
-                table)
-    
+
+    logger.info("Start calculating Gini coefficient from table '%s'", table)
+
     result = conn.execute(text(query_gini))
     gini_coef = result.scalar()
 
     return gini_coef
 
 
-def estimate_time_stability(table, 
-                            freq,
-                            conn):
+def estimate_time_stability(table, freq, conn):
     # setup logger
     logger = session.logger
 
@@ -139,8 +131,7 @@ def estimate_time_stability(table,
         WHERE prev_count IS NOT NULL;
         """
 
-    logger.info("Start estimating temporal stability from table '%s'", 
-                table)
+    logger.info("Start estimating temporal stability from table '%s'", table)
 
     result = conn.execute(text(query_time_stab))
     time_stability = result.scalar()
@@ -148,39 +139,33 @@ def estimate_time_stability(table,
     return time_stability
 
 
-def describe_save_h3_df(df, 
-                        f_name, 
-                        idx_new=None):
+def describe_save_h3_df(df, f_name, idx_new=None):
     # setup logger
     logger = session.logger
 
-    # 
+    #
     if idx_new is not None:
         df.set_index(idx_new, inplace=True)
 
-    # for col in ["mean", "var", 
-    #             "std", "ratio_var_mean", 
+    # for col in ["mean", "var",
+    #             "std", "ratio_var_mean",
     #              "zero_share",
     #             "entropy", "gini",
     #             "time_stability"]:
     #     df[col] = df[col].astype(float).round(3)
 
-    for col in ["zero_count", "rows", 
-                "min", "median", 
-                "max"]:
+    for col in ["zero_count", "rows", "min", "median", "max"]:
         df[col] = df[col].astype(int)
 
     pd.set_option("display.float_format", "{:.3f}".format)
 
-    logger.info("h3_stat_merge -- INFO ---\n%s\n", df.info()) 
+    logger.info("h3_stat_merge -- INFO ---\n%s\n", df.info())
     logger.info("h3_stat_merge -- OVERVIEW ---\n%s\n", df.T)
-    
+
     folder = os.getenv("PATH_PROCESSED")
     df_path = f"{folder}/{f_name}.csv"
     # df.to_csv(df_path)
-    logger.info("Saved df '%s' to %s", 
-                f_name,
-                ph.shorten_path(df_path)) 
+    logger.info("Saved df '%s' to %s", f_name, ph.shorten_path(df_path))
 
     return
 
@@ -195,15 +180,14 @@ def evaluate_h3_resolutions():
     name_logfile = session.log_file
 
     # # load logger
-    logger = create_logger(name=log_name,
-                            file_name=name_logfile)
+    logger = create_logger(name=log_name, file_name=name_logfile)
 
     session.logger = logger
 
     # setup DB_engine
     engine = post.get_engine()
-    
-    # 
+
+    #
     h3_values = session.h3_values
     frequence = [session.freq]
     inflate = session.inflate
@@ -219,7 +203,7 @@ def evaluate_h3_resolutions():
                 df["entropy"] = calculate_entropy(table, conn)
                 df["gini"] = calculate_gini(table, conn)
                 df["time_stability"] = estimate_time_stability(table, freq, conn)
-                
+
                 df["res"] = val
                 df["freq"] = freq
                 h3_dict[f"res_{val}"] = df
@@ -227,13 +211,12 @@ def evaluate_h3_resolutions():
     h3_stat_merge = pd.concat(h3_dict.values(), ignore_index=True)
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    describe_save_h3_df(h3_stat_merge, 
-                        f_name="df_h3_eval",
-                        idx_new=["res", "freq"])
-    
+    describe_save_h3_df(h3_stat_merge, f_name="df_h3_eval", idx_new=["res", "freq"])
+
     logger.info("Completed H3 resolution evaluation at %s", now)
 
     return
+
 
 if __name__ == "__main__":
     evaluate_h3_resolutions()

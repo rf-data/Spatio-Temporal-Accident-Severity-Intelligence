@@ -7,20 +7,20 @@ import scipy.stats as stats
 
 
 # === Feature description ===
-def describe_features_stats(df, 
-                            num_feats=None,
-                            cat_feats=None, 
-                            # na_threshold=0.5, 
-                            # min_std=1e-6, 
-                            verbose=True):
+def describe_features_stats(
+    df,
+    num_feats=None,
+    cat_feats=None,
+    # na_threshold=0.5,
+    # min_std=1e-6,
+    verbose=True,
+):
     """Computes descriptive statistics for numerical and categorical features."""
     if num_feats is None:
-        num_feats = df.select_dtypes(include=[np.number])\
-                                    .columns.tolist()
-    
+        num_feats = df.select_dtypes(include=[np.number]).columns.tolist()
+
     if cat_feats is None:
-        cat_feats = df.select_dtypes(exclude=[np.number])\
-                                    .columns.tolist()
+        cat_feats = df.select_dtypes(exclude=[np.number]).columns.tolist()
 
     if verbose:
         print(f"📊 Numeric: {num_feats}\n🔤 Categorical: {cat_feats}")
@@ -51,52 +51,50 @@ def describe_features_stats(df,
         "max": np.nanmax,
         "std": np.nanstd,
         "skewness": lambda x: stats.skew(x.dropna()),
-        "kurtosis": lambda x: stats.kurtosis(x.dropna())
+        "kurtosis": lambda x: stats.kurtosis(x.dropna()),
     }
 
     stats_num_dict = {
-            stat: [
-                func(df_num[col]) for col in df_num.columns
-                ] for stat, func in statistics.items()
-                }
-    
-    stats_num = pd.DataFrame(stats_num_dict, 
-                             index=df_num.columns)
+        stat: [func(df_num[col]) for col in df_num.columns]
+        for stat, func in statistics.items()
+    }
 
-    stats_cat = pd.DataFrame(index=cat_feats, 
-                            columns=["n_unique", "NaN_count", 
-                                     "top", "top_freq"])
+    stats_num = pd.DataFrame(stats_num_dict, index=df_num.columns)
+
+    stats_cat = pd.DataFrame(
+        index=cat_feats, columns=["n_unique", "NaN_count", "top", "top_freq"]
+    )
     for col in cat_feats:
         stats_cat.loc[col, "n_unique"] = df[col].nunique(dropna=True)
         stats_cat.loc[col, "NaN_count"] = df[col].isna().sum()
         top_val = df[col].mode(dropna=True)
         if not top_val.empty:
-            stats_cat.loc[col, 
-                          "top"] = top_val[0]
-            stats_cat.loc[col, 
-                          "top_freq"] = df[col]\
-                                        .value_counts(dropna=True)\
-                                        .iloc[0]
+            stats_cat.loc[col, "top"] = top_val[0]
+            stats_cat.loc[col, "top_freq"] = df[col].value_counts(dropna=True).iloc[0]
 
     return stats_num, stats_cat
+
 
 # === Feature visualisation ===
 def visualize_features(num_data=None, cat_data=None):
     """Plots boxplots for numeric and barplots for categorical data."""
     if num_data is not None and isinstance(num_data, pd.DataFrame):
         num_feat = num_data.columns.tolist()
-        num_data.plot(kind='box', subplots=True,
-                      layout=(int(np.ceil(len(num_feat) / 3)), 3),
-                      figsize=(15, 3 * int(np.ceil(len(num_feat) / 3))),
-                      title="Boxplots of Numeric Features")
+        num_data.plot(
+            kind="box",
+            subplots=True,
+            layout=(int(np.ceil(len(num_feat) / 3)), 3),
+            figsize=(15, 3 * int(np.ceil(len(num_feat) / 3))),
+            title="Boxplots of Numeric Features",
+        )
         plt.tight_layout()
         plt.show()
 
     if cat_data is not None and isinstance(cat_data, pd.DataFrame):
         for col in cat_data.columns:
             plt.figure(figsize=(8, 4))
-            cat_data[col].value_counts(dropna=False).plot(kind='bar')
-            plt.title(f'Categorical Distribution: {col}')
+            cat_data[col].value_counts(dropna=False).plot(kind="bar")
+            plt.title(f"Categorical Distribution: {col}")
             plt.xticks(rotation=45)
             plt.tight_layout()
             plt.show()
@@ -126,11 +124,11 @@ def visualize_features_grouped(num_data=None, cat_data=None, suffixes=None):
         axes = axes.flatten() if nrows > 1 else [axes]
 
         for ax, (base, cols) in zip(axes, feature_groups.items()):
-            num_data[cols].plot(kind='box', ax=ax)
+            num_data[cols].plot(kind="box", ax=ax)
             ax.set_title(f"{base} ({'Grouped' if len(cols) > 1 else 'Single'})")
 
         for ax in axes[num_groups:]:
-            ax.axis('off')
+            ax.axis("off")
 
         plt.suptitle("Boxplots of Grouped Numeric Features", fontsize=16)
         plt.tight_layout(rect=[0, 0, 1, 0.97])
@@ -139,8 +137,8 @@ def visualize_features_grouped(num_data=None, cat_data=None, suffixes=None):
     if cat_data is not None and isinstance(cat_data, pd.DataFrame):
         for col in cat_data.columns:
             plt.figure(figsize=(8, 4))
-            cat_data[col].value_counts(dropna=False).plot(kind='bar')
-            plt.title(f'Categorical Distribution: {col}')
+            cat_data[col].value_counts(dropna=False).plot(kind="bar")
+            plt.title(f"Categorical Distribution: {col}")
             plt.xticks(rotation=45)
             plt.tight_layout()
             plt.show()
