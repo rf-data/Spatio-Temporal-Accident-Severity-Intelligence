@@ -1,0 +1,129 @@
+## yaml-file "Characteristics" dataset
+
+# ------------------------------
+# GENERAL
+# ------------------------------
+llm:
+  model: "gpt-4.1-mini"
+  temperature: 0.2
+
+agent:
+  version: 1
+  max_iterations: 2
+  reflexive: True
+
+dataset:
+  topic: road accidents
+  name: chracteristics 
+
+  structure:
+    table: True
+    image: False
+    video: False
+    time_series: True
+    geo_data: True
+    cross_file: True
+
+  # properties:
+  #   temporal_granularity: day
+  #   spatial_granularity: gps_point
+
+  expectations:
+    expected_primary_key: Num_Acc
+    # expected_row_growth: yearly_append
+    # expected_stationarity: False
+  
+  merge_behavior:
+    default: append
+    # allowed_keys:
+    #   - Num_Acc
+
+general_args:
+  summary_name: charac
+  summary_file_name: charac_EDA_summary_v1_2026-03-09_11:33
+  data_folder: Eigenschaften_characteristics
+  schema_name: clean
+  table_name: characteristics
+
+# ------------------------------
+# RAW DATA
+# ------------------------------
+tool_args:
+  missing_analysis: 
+    threshold: 0.5
+
+  infinite_analysis:
+    params:
+      strategy: drop
+
+  duplicate_analysis:
+    threshold: 0.01
+    grouping: []
+    params:
+      subset: []
+      keep: first
+
+  numeric_summary:
+    percentiles: [0.01, 0.05, 0.1, 0.25, 0.75, 0.9, 0.95, 0.99]
+      
+  categorical_summary:
+    top_n: 10
+    threshold: 50 
+      
+  zero_inflation_analysis:
+    threshold: 0.8
+
+  # find_geo_cols_and_dups:
+
+
+# ----------------------------------
+# FEATURE ENGINEERING / SQL_UPLOAD
+# ----------------------------------
+
+columns:
+  dt_col: []
+  geo_col: ["latitude", "longitude"] 
+  primary_key: "ID_accident"
+  to_drop: ["address", "commune", "agg", 
+            "geographical group"]
+  numeric: ["ID_accident", "year", "month", 
+            "latitude", "longitude", "weather_type",
+            "collision_type", "hr_min", "interception_type", 
+            "light_condition"]
+  categorical: ["department"]
+  rename: {
+    "Accident_Id": "ID_accident",
+    "Num_Acc": "ID_accident",
+    "adr": "address",
+    "agg": "agg",
+    "an": "year",
+    "atm": "weather_type",
+    "col": "collision_type",
+    "com": "commune",
+    "dep": "department",
+    "gps": "geographical group",
+    "hrmn": "hr_min",
+    "int": "interception_type",
+    "jour": "day",
+    "lat": "latitude",
+    "long": "longitude",
+    "lum": "light_condition",
+    "mois": "month"
+    }
+
+  sql_dtypes: {
+    "ID_accident": BIGINT,
+    "year": SMALLINT,
+    "weather_type": SMALLINT,
+    "collision_type": SMALLINT,
+    "interception_type": SMALLINT,
+    "day": SMALLINT,
+    "light_condition": SMALLINT,
+    "month": SMALLINT,
+    "department": VARCHAR(255),
+    "hr_min": VARCHAR(255),
+    "latitude": DOUBLE PRECISION,
+    "longitude": DOUBLE PRECISION,
+    "address": VARCHAR(255)
+  }
+

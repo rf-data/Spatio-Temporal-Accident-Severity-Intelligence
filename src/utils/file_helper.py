@@ -28,9 +28,23 @@ from src.core.session import session
 # -----------------------
 # CONFIGURATION METHODS
 # -----------------------
-def load_config(path):
+def load_yaml_config(path):
     with open(path, "r") as f:
         return yaml.safe_load(f)
+
+
+def get_yaml_config(name):
+    # (1) load config + parse arguments
+    gh.load_env_vars()
+    
+    config_folder = os.getenv("CONFIG_PATH")
+    
+    config_path = Path(config_folder) / f"{name}.yaml"
+
+    print(f"Loading config_file:", ph.shorten_path(config_path))
+    config = load_yaml_config(config_path)
+
+    return config 
 
 
 # -----------------
@@ -85,7 +99,7 @@ def load_dfs(paths: List[str | Path] | str | Path, index_col: str | None = None)
     return dfs_dict
 
 
-def read_french_csv_smart(path: str) -> pd.DataFrame:
+def read_french_csv_smart(path: str, nrows=None) -> pd.DataFrame:
     sep = detect_delimiter(path)
     df = pd.read_csv(
         path,
@@ -94,6 +108,7 @@ def read_french_csv_smart(path: str) -> pd.DataFrame:
         decimal=",",
         engine="python",
         on_bad_lines="skip",
+        nrows=nrows
         # low_memory=False
     )
 
@@ -125,14 +140,15 @@ def load_files_from_folder(folder):
 def detect_delimiter(path: str) -> str:
     with open(path, encoding="latin1") as f:
         header = f.readline()
-    if "\t" in header:
-        return "\t"
-    elif ";" in header:
-        return ";"
-    elif "," in header:
-        return ","
-    else:
-        raise ValueError(f"Unknown delimiter in {path}")
+        
+        if "\t" in header:
+            return "\t"
+        elif ";" in header:
+            return ";"
+        elif "," in header:
+            return ","
+        else:
+            raise ValueError(f"Unknown delimiter in {path}")
 
 
 # -----------------
@@ -429,7 +445,6 @@ def merge_dfs(
 # ---------------------
 # DICT / JSON METHODS
 # ---------------------
-
 
 def make_json_safe(obj):
     if isinstance(obj, dict):

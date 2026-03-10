@@ -4,12 +4,20 @@
 # from typing import Optional
 # from datetime import datetime
 import os
+from pathlib import Path
 import json
+from collections import defaultdict
 
 import src.utils.general_helper as gh
+import src.utils.file_helper as fh
 import src.utils.agent_helper as ah
 from src.core.report_classes import PreparationSummary
+from src.core.tools_classes import  Observation
 
+
+# ------------------------------
+# HELPER FUNCTIONS
+# ------------------------------
 def pandas_to_sql_dtype(dtype_str: str):
     if "int" in dtype_str:
         return "INTEGER"
@@ -22,12 +30,33 @@ def pandas_to_sql_dtype(dtype_str: str):
     return "VARCHAR(255)"
 
 
-# def generate_sql_schema(final_columns, dtypes, merge_strategy):
+def load_eda_summary(config):
+    gh.load_env_vars()
+
+    report_folder = os.getenv("FOLDER_REPORT")
+
+    arg_dict = config.get("general_args", {})
+
+    report_name = arg_dict.get("summary_file_name")
+    report_path = Path(report_folder) / f"{report_name}.json"
+    
+    with open(report_path) as f:
+        report = json.load(f)
+
+    files = report.get("metadata", {}).get("files_analyzed", {})
+    processing = report["processing"]
+
+    return {
+        "report": report, 
+        "files": files,
+        "processing": processing
+        }
+
    
-def build_sql_schema(dfs, merge_strategy, table_name):
+def build_sql_schema(dfs, merge_statement, table_name):
 
     # Beispiel: nimm erstes DF als Referenz
-    name, df = next(iter(dfs.items()))
+    _, df = next(iter(dfs.items()))
 
     sql_columns = {
             col: pandas_to_sql_dtype(str(df[col].dtype))
@@ -36,11 +65,19 @@ def build_sql_schema(dfs, merge_strategy, table_name):
 
     primary_key = None
 
-    if merge_strategy:
-        for pair in merge_strategy.values():
-            if pair["recommended_join_keys"]:
-                primary_key = pair["recommended_join_keys"]
-                break
+    if merge_statement:
+        strategy = merge_statement.merge_strategy
+        if strategy and strategy.strategy == "merge": 
+            primary_key = strategy.join_key
+
+            print("[MERGE] Automated join for %s", 
+                  merge_statement.files)
+        else:
+            print("[NO MERGE] No automated join for %s (strategy=%s)\n%sreason: %s", 
+                merge_statement.files,
+                strategy.strategy,
+                strategy.reason
+                )
 
     return {
         "table_name": table_name,
@@ -54,16 +91,18 @@ def build_feature_engineering_plan(data_processing_plan):
 
     plan = {
         "create_datetime_columns": [],
-        "zero_streak_feature": [],
         "lag_rolling_features": [],
         "seasonality_features": [],
+        "zero_streak_feature": [],
         "log_transform_candidates": [],
         "scaling_candidates": []
         }
 
     for _, actions in data_processing_plan.items():
         for act in actions:
-            if act.action == "parse_candidates":
+            # print("[DEBUG] type + print", type(act), act)
+
+            if act.action == "parse_datetime":
                 plan["create_datetime_columns"].extend(act.target)
                 plan["lag_rolling_features"].extend(act.target)
                 plan["seasonality_features"].extend(act.target)
@@ -84,46 +123,75 @@ def build_feature_engineering_plan(data_processing_plan):
     return plan
 
 
+# ------------------------------
+# MAIN FUNCTIONS
+# ------------------------------
 def generate_preparation_summary(dfs, findings, meta_data):
-        
-    data_processing = {}   # file -> actions
-    merge_strategy = {}    # pair -> strategy
-    sql_schema = None
+    
+    metric_dict = defaultdict(dict)
+    data_processing = {}    # file -> actions
+    merge_dict = {}     # pair -> strategy
+    schema_proposal = None
 
-    table_name = meta_data.get("sql_table", None)
+    table_name = meta_data.get("table_name", None)
+
     for i, f in enumerate(findings):
+        # extract 'oberservation metrics'
+        # metric_dict = extract_finding_metrics(f)
+
+        # overview metric results
+        metrics = f.metrics
+
+        if not isinstance(metrics, dict):
+            print("[INFO] dtype metrics:", type(metrics))
+            print("[INFO] metrics:", metrics)
+            # continue
+        
+        for tool_name, file_results in metrics.items():
+            if isinstance(file_results, Observation):
+                file_results = file_results.model_dump()
+                
+            for file_name, observation in file_results.items():
+                metric_dict[str(file_name)][tool_name] = observation
+                   
+        # extract 'recommendations'
         hint = f.recommendation_hint
         if not isinstance(hint, dict):
-            continue
+            print("[INFO] dtype hint", type(hint))
+            print("[INFO] hint:", hint)
+            # continue
             
+        # extract 'data processing strategy'
         proc = hint.get("processing", None)
         if proc:    # file -> actions
             for file_name, actions in proc.items():
+                print("[DEBUG] file_name - len(actions):", file_name, len(actions))
                 data_processing.setdefault(file_name, [])
                 data_processing[file_name].extend(actions)
-            
-        merge = hint.get("merge", None)
-        if merge:
-            for pair_name, details in merge.items():
-                
-                # merge_strategy.setdefault(pair_name, {})
-                merge_strategy[pair_name] = details
 
-            schema = build_sql_schema(
+        # extract 'merge strategy'  
+        merge_recomm = hint.get("merge", None)
+
+        if merge_recomm:
+            for pair_name, merge_statement in merge_recomm.items():
+                merge_dict[pair_name] = merge_statement
+
+            schema_proposal = build_sql_schema(
                                     dfs, 
-                                    merge, 
+                                    merge_statement, 
                                     table_name
                                     )
-            # sql_schema.setdefault(pair_name, [])
-            sql_schema = schema # [f"schema_{i}"] 
-            print(f"created sql_schema 'schema_{i}'")
+
+    print(f"[DEBUG] data_processing (dtype={type(data_processing)}):\n", 
+          data_processing)
 
     feat_eng_plan = build_feature_engineering_plan(data_processing)
-    
+
     return PreparationSummary(
+                        metric_results=metric_dict,
                         processing=data_processing,
-                        merge=merge_strategy,
-                        sql_schema=sql_schema,
+                        merge=merge_dict,
+                        schema_proposal=schema_proposal,
                         feature_engineering=feat_eng_plan,
                         metadata=meta_data,
                         )
@@ -131,37 +199,69 @@ def generate_preparation_summary(dfs, findings, meta_data):
 
 def build_and_save_summary(summary: PreparationSummary, 
                            name, 
+                           json_only=True, 
+                           separated=False,
                            base_path=None):
 
-    # timestamp = report.generated_at.strftime("%Y%m%d_%H%M%S")
     now = summary.metadata.get("analysis_timestamp", "")
-    name = summary.metadata.get("summary_name", "")
+    sum_name = summary.metadata.get("summary_name", "")
 
     if base_path is None:
         # (1) load config
         gh.load_env_vars()
         base_path = os.getenv("FOLDER_REPORT")
-        
-    json_path = f"{base_path}/{now}_{name}_EDA_summary.json"
-    md_path = f"{base_path}/{now}_{name}_EDA_summary.md"
+
+    # convert summary to dict/json
+    sum_dict = summary.model_dump()
 
     # JSON
-    with open(json_path, "w") as f:
-        json.dump(summary.model_dump(), f, indent=2, default=str)
+    if separated: 
+        metrics = sum_dict.get("metric_results", {})
+        file_process = sum_dict.get("processing", {})
+        merge = sum_dict.get("merge", {})
+        schema_proposal = sum_dict.get("schema_proposal", {})
+        feat_eng = sum_dict.get("feature_engineering", {})
+        metadata = sum_dict.get("metadata", {})
 
-    # Markdown
-    md_content = build_markdown_summary(summary)
-    with open(md_path, "w") as f:
-        f.write(md_content)
+        for name, sep in [("metrics", metrics), 
+                          ("f_process", file_process),
+                          ("merge", merge),
+                          ("schema", schema_proposal),
+                          ("FeatEng", feat_eng),
+                          ("meta_data", metadata)]:
 
-    return {"json": json_path, "markdown": md_path}        
+            sep_path = f"{base_path}/{now}_{sum_name}_EDA_{name}.json"
+     
+            with open(sep_path, "w") as f:
+                json.dump(fh.make_json_safe(sep), f, indent=2, default=str)  
 
+    else:
+        json_path = f"{base_path}/{now}_{name}_EDA_summary.json"
+     
+        with open(json_path, "w") as f:
+            json.dump(fh.make_json_safe(sum_dict), f, indent=2, default=str)
 
-def build_markdown_summary(summary: PreparationSummary) -> str:
+    if not json_only: 
+        # Markdown
+        md_path = f"{base_path}/{now}_{sum_name}_EDA_summary.md"
 
-    files_analysed = summary.metadata.get("files_analyzed", "n.a.")
-    timestamp = summary.metadata.get('analysis_timestamp', '')
-    agent_version = summary.metadata.get('agent_version', 'tba')
+        md_content = build_markdown_summary(sum_dict)
+        with open(md_path, "w") as f:
+            f.write(md_content)
+
+    return     
+
+#######################################################################################
+# ------------------------------
+# UNDER CONSTRUCTION
+# ------------------------------
+def build_markdown_summary(summary:dict) -> str:
+
+    metric_results = summary.get("metric_results")
+    meta_data =  summary.get("metadata")
+    files_analysed =meta_data.get("files_analyzed", "n.a.")
+    timestamp = meta_data.get('analysis_timestamp', '')
+    agent_version = meta_data.get('agent_version', 'tba')
 
     md = []
     md.append(f"# Raw Data EDA Report")
@@ -169,10 +269,43 @@ def build_markdown_summary(summary: PreparationSummary) -> str:
     md.append(f"files analysed:")
     md.append(ah.to_md_safe(files_analysed))
     md.append(f"\nanalysis_timestamp:\t{timestamp}")
-    md.append(f"\nagent_version:\t{agent_version}")
+    md.append(f"agent_version:\t{agent_version}\n")
+
+    # 🔹 Metrics
+    for file_name, tool_dict in metric_results.items():
+        md.append(f"## Tools observations -- {file_name}")
+       
+        for tool_name, result in tool_dict.items():
+            
+            md.append(f"### {tool_name}")
+            if not isinstance(result, dict):
+                print("dtype:", type(result))
+                print(result)
+                continue 
+
+            for m in result.get("metrics"):
+
+                if isinstance(m, dict):
+                    for m_name , m_values in m.items():
+                        md.append(f"name: {m_name.upper()}")
+                        md.append(ah.to_md_safe(m_values))
+                        md.append("")
+                else:
+                    md.append(f"name / result:{m}")
+                    md.append("")
+                    
+                
+                md.append("")
+            md.append("")
+            # \nresults:\n{(result)}")
+            # if action.params:
+            #     for arg, value in action.params.items():
+            #         md.append(f"  param '{arg}' - value: {ah.to_md_safe(value)}")
+        md.append("")
+
 
     # 🔹 Processing
-    md.append("## Data Processing Plan")
+    md.append("## Derived Actions -- 'Data Processing Plan'")
     for file_name, actions in summary.processing.items():
         md.append(f"### File: {file_name}")
         for action in actions:
@@ -183,7 +316,7 @@ def build_markdown_summary(summary: PreparationSummary) -> str:
             md.append("")
 
     # 🔹 Merge
-    md.append("## Merge Strategy")
+    md.append("## Derived Actions -- 'Merge Strategy'")
     for pair_name, details in summary.merge.items():
 
         join_keys = ah.to_md_safe(details.get('recommended_join_keys'))

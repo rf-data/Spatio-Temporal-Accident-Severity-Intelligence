@@ -1,7 +1,8 @@
 ## eda_rules.py
 # imports
-import src.utils.agent_helper as ah
+from collections import defaultdict
 
+import src.utils.agent_helper as ah
 from src.core.finding_classes import ActionSchema
 
 # class ActionSchema(BaseModel):
@@ -12,71 +13,12 @@ from src.core.finding_classes import ActionSchema
 #     model_config = {
 #         "extra": "forbid"
 #         }
+# "file_a": a,
+#                     "file_b": b,
+#                     "common_columns": common_cols,
+#                     "type_conflicts": type_conflicts,
+#                     "cardinality_mismatch": cardinality
 
-def recommend_merge_strategy(merge_analysis: dict):
-
-    recommendations = {}
-
-    for pair_name, analysis in merge_analysis.items():
-
-        common_cols = analysis["common_columns"]
-        type_conflicts = analysis["type_conflicts"]
-        cardinality = analysis["cardinality_mismatch"]
-
-        # valid join candidates
-        valid_keys = [
-            col
-            for col in common_cols
-            if col not in type_conflicts and col not in cardinality
-        ]
-
-        # determine join type
-        if len(valid_keys) == 0:
-            join_type = None
-        elif len(cardinality) > 0:
-            join_type = "left"
-        else:
-            join_type = "inner"
-
-        # pre-merge actions
-        cast_col = ActionSchema(
-                    action = "cast_column dtype",
-                    target = []
-                    )
-        high_card = ActionSchema(
-                    action = "reduce high_cardinality",
-                    target = []
-                    )
-
-        for col in type_conflicts:
-            cast_col.target.append(col)
-            
-        for col in cardinality:
-            high_card.target.append(col)
-
-
-        pre_merge_actions = {
-            "cast_column": cast_col,
-            "high_cardinality": high_card
-        }
-
-        # post-merge checks
-        post_merge_checks = [
-            "Validate row count after merge",
-            "Check duplicate key combinations",
-            "Re-evaluate missingness on key columns",
-        ]
-
-        recommendations[pair_name] = {
-            "file_a": analysis["file_a"],
-            "file_b": analysis["file_b"],
-            "recommended_join_keys": valid_keys,
-            "join_type": join_type,
-            "pre_merge_actions": pre_merge_actions,
-            "post_merge_checks": post_merge_checks,
-        }
-
-    return recommendations
 
 
 # {
@@ -116,16 +58,20 @@ def recommend_merge_strategy(merge_analysis: dict):
 #     return
 
 
-def recommend_from_distribution(skew_col: dict, kurt_col: dict):
-
+def recommend_from_distribution(skew_col: dict, 
+                                kurt_col: dict, 
+                                config):
+    print("Start 'recommend_from_distribution'")
     
     skew_scheme = ActionSchema(
                 action = "handle_skewness",
-                target = []
+                target = [],
+                params = {}
                 ) 
     kurt_scheme = ActionSchema(
                 action = "handle_kurtosis",
-                target = []
+                target = [],
+                params = {}
         )
 
     # skewness
@@ -136,6 +82,7 @@ def recommend_from_distribution(skew_col: dict, kurt_col: dict):
     for col, skew in skew_col.items():
         if abs(skew) > 2:
             skew_scheme.target.append(col)
+            skew_scheme.params = config["numeric_summary"].get("params", {})
 
     # kurtosis
     # for idx, kurt in kurt_idx.items():
@@ -145,6 +92,7 @@ def recommend_from_distribution(skew_col: dict, kurt_col: dict):
     for col, kurt in kurt_col.items():
         if kurt > 10:
             kurt_scheme.target.append(col)
+            kurt_scheme.params = config["numeric_summary"].get("params", {})
 
     recs = {
         "skewness": skew_scheme,
@@ -155,13 +103,17 @@ def recommend_from_distribution(skew_col: dict, kurt_col: dict):
 
 
 def filter_recommendations(params, config):
+
+    print("Start 'filter_recommendations'")
     processing = []
 
     for p in params:
-        hint = p.recommendations_hint
+        hint = p.recommendation_hint
         # ah._get_value(p)
         # hint = getattr(p, "recommendation_hint", None) or {}
         if not isinstance(hint, dict):
+            # print("[DEBUG] dtype hint:", type(hint))
+            # print("[DEBUG] hint:", hint)
             continue
 
         miss = hint.get("missing", None)
@@ -171,6 +123,12 @@ def filter_recommendations(params, config):
         dist = hint.get("Skew_Kurt", None)
         dt_cand = hint.get("dt_candidates", None)
         gr_cand = hint.get("cardinality", None)
+        geo_dups = hint.get("geo_duplicates", None)
+
+        # for m in [miss, inf, zero, 
+        #           dup, dist, dt_cand, 
+        #           gr_cand]:
+            # print("[DEBUG]:\n", m)
 
         if miss:
             processing.append(
@@ -204,7 +162,7 @@ def filter_recommendations(params, config):
     
 
         if dist and isinstance(dist, dict):
-            for name, act_sch in dist.values():
+            for name, act_sch in dist.items():
                 # parts = str(name).split("_", 1)
                 # if len(parts) != 2:
                 #     continue
@@ -220,11 +178,25 @@ def filter_recommendations(params, config):
                                 )
                     
         if dt_cand:
+            if config.get("detect_datetime_candidates", None):
+                dt_params = config["detect_datetime_candidates"].get("params", {})
+            else:
+                dt_params = {}
+
+            dt_cols = []
+
+            if isinstance(dt_cand, dict):
+                for v in dt_cand.values():
+                    dt_cols += v
+            else:
+                print("type 'dt_cand':", type(dt_cand))
+                dt_cols += dt_cand
+
             processing.append(
                 ActionSchema(
-                    action = "parse_datetime", 
-                    target = dt_cand,
-                    params  = config["detect_datetime_candidates"].get("params", {})
+                    action = "parse_datetime",
+                    target = list(dt_cols),
+                    params  = dt_params
                     ))
             
         if gr_cand:
@@ -235,6 +207,16 @@ def filter_recommendations(params, config):
                     params  = config["categorical_summary"].get("params", {})
                     ))
 
+        if geo_dups:
+            geo_dups_params = config.get("find_geo_cols_and_dups", {}).get("params", {})
+
+            processing.append(
+                ActionSchema(
+                    action = "drop_geo_duplicates",
+                    target = geo_dups,
+                    params = geo_dups_params
+                    ))
+        
     return processing
 
 

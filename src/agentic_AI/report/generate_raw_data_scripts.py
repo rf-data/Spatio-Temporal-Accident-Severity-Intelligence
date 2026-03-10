@@ -84,7 +84,7 @@ def handle_impute_nan(action, var_name):
     return lines
 
 
-def handle_scaling(action, var_name):
+def handle_skewness(action, var_name):
     lines = []
     lines.append("scaler = StandardScaler()")
 
@@ -96,13 +96,15 @@ def handle_scaling(action, var_name):
     return lines
 
 
-def handle_log_transform(action, var_name):
+def handle_kurtosis(action, var_name):
     lines = []
 
     for col in action.target or []:
+
         lines.append(
             f"{var_name}['log_{col}'] = np.log1p({var_name}['{col}'])"
         )
+        # alternatively, square_root or Box_Cox / Yeo_Johnson
 
     return lines
 
@@ -125,8 +127,11 @@ def generate_cleaning_script(summary: PreparationSummary):
         lines.append(f"    print(\"Error while loading '{file_name}': {{e}}\")")
 
         for action_dict in actions:
-
-            action = ActionSchema(**action_dict)
+            if isinstance(action_dict, ActionSchema):
+                action = action_dict
+            else:
+                action = ActionSchema(**action_dict)
+                
             handler = ACTION_DISPATCH.get(action.action)
 
             if not handler:
@@ -219,7 +224,7 @@ def generate_merge_script(summary: PreparationSummary):
 
 def generate_sql_query(summary: PreparationSummary):
 
-    schema = summary.sql_schema
+    schema = summary.schema_proposal
     if not schema:
         return ""
 
@@ -247,6 +252,9 @@ ACTION_DISPATCH = {
     "parse_datetime": handle_parse_datetime,
     "impute_nan": handle_impute_nan,
     # "impute_inf": handle_impute_inf,   # analog definieren
-    "scaling_candidate": handle_scaling,
-    "log_transform_candidate": handle_log_transform,
+    # "cardinality_action": handle_high_cardinality,
+    "handle_skewness": handle_skewness,
+    "handle_kurtosis": handle_kurtosis
 }
+
+# WARNING: No handler implemented for 'cardinality_action'

@@ -11,6 +11,7 @@ import src.utils.file_helper as fh
 from src.agentic_AI.findings.audit_findings import score_audit_findings
 # from src.agentic_AI.findings.raw_data_findings import score_eda_findings   #  gather_findings
 from src.agentic_AI.planning.agent_planning import plan_checks, reflect_and_plan
+from src.agentic_AI.planning.plan_default_checks import plan_default_checks
 from src.agentic_AI.reasoning.auditor_reasoning import run_llm_reasoning
 from src.agentic_AI.report.raw_data_report import generate_preparation_summary
 
@@ -108,6 +109,7 @@ class AuditAgent:
         )
 
     def execute_check(self, check_name: str):
+        
         check_fn = self.context.checks.get(check_name)
         # check_cfg = build_check_config(self.audit_config["tables"]["weekly_table"])
 
@@ -179,8 +181,8 @@ class RawDataArguments(BaseModel):
     data_folder: str | Path = None
     report_name: str = None
     summary_name: str = None
-    sql_schema: str = None
-    sql_table: str = None
+    schema_name: str = None
+    table_name: str = None
     file_type: Optional[List[str]] = ["csv", "parquet"]
     sample_size: Optional[int] = None
     chunk_size: Optional[int] = None
@@ -230,7 +232,9 @@ class RawDataState(BaseModel):
 
 
 class RawDataContext:
-    def __init__(self, tool_registry: ToolRegistry, check_registry: CheckRegistry):
+    def __init__(self, 
+                 tool_registry: ToolRegistry, 
+                 check_registry: CheckRegistry):
         self.tools = tool_registry
         self.checks = check_registry
 
@@ -238,25 +242,29 @@ class RawDataContext:
 class RawDataAgent:
     def __init__(self, context: RawDataContext, config):
 
+        self.config = config
+        self.agent_config = config.get("agent", None)
+        self.arguments = config.get("general_args", None)
         self.context = context
+        self.dataset_config = config.get("dataset", None)
+        self.llm_config = config.get("llm", None)
+        self.raw_data: Dict[str, pd.DataFrame] | None = None
+        self.state = RawDataState(
+            llm_model=self.llm_config.get("model", 
+                                          None),
+            llm_temperature=self.llm_config.get("temperature", 
+                                                0.0),
+            )
+        self.tools_config = config.get("tool_args", None)
+
         # self.state = RawDataState(...)
         # self.eda_config = config.get("eda", None)
-        self.arguments = config.get("arguments", None)
-        self.tools_config = self.arguments.get("tools", None)
-        self.dataset_config = config.get("dataset", None)
         # self.risk_config = config.get("risk", None)
-        self.llm_config = config.get("llm", None)
-        self.agent_config = config.get("agent", None)
-        self.raw_data: Dict[str, pd.DataFrame] | None = None
 
         # arguments_dict = self.eda_config.get("arguments", None)
         self.arguments["folder"] = os.getenv("PATH_RAW")
         self.arguments = RawDataArguments(**self.arguments)
 
-        self.state = RawDataState(
-            llm_model=self.llm_config.get("model", None),
-            llm_temperature=self.llm_config.get("temperature", 0.0),
-        )
 
     def load_data(self):
 
@@ -270,19 +278,29 @@ class RawDataAgent:
 
         dfs = {}
         for f in csv_files:
-            dfs[f.name] = fh.read_french_csv_smart(f)
+            f_name =  str(f.name)
+            if "-" in f_name:
+                f_new = f_name.replace("-", "_")
+            else: 
+                f_new = f_name
+
+            dfs[f_new] = fh.read_french_csv_smart(f)
 
         for f in parquet_files:
-            dfs[f.name] = pd.read_parquet(f)
+            f_name =  str(f.name)
+            dfs[f_name] = pd.read_parquet(f)
 
         self.raw_data = dfs
 
     def execute_check(self, check_name: str):
-        check_fn = self.context.checks.get(check_name)
+        if callable(check_name):
+            check_fn = check_name
+        else:
+            check_fn = self.context.checks.get(check_name)
 
-        findings = check_fn(self.raw_data, config=self.tools_config)
-        # aktuell nicht nötig
-        # self.eda_config)
+        print("[DEBUG] fn_name:", check_fn)
+        findings = check_fn(self.raw_data, 
+                            config=self.config)
 
         if isinstance(findings, tuple):
             print("Found tuple:", findings)
@@ -299,15 +317,22 @@ class RawDataAgent:
         self.state.goal = goal
 
         # initial checks
-        planned_checks = plan_checks(
-            self.state.goal,
-            self.context.checks._checks,
-            self.state.llm_model,
-            self.state.llm_temperature,
-            agent="raw_data",
-        )
+        checks = self.context.checks
+        planned_checks = plan_default_checks(checks, 
+                                             self.dataset_config)
+        
+        print("Following checks will be conducted:\n", planned_checks)
+        # plan_checks(
+        #     self.state.goal,
+        #     self.context.checks._checks,
+        #     self.state.llm_model,
+        #     self.state.llm_temperature,
+        #     agent="raw_data",
+        # )
+
 
         now = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        print("Starting checks")
         for check_name in planned_checks:
             if check_name in self.state.executed_checks:
                 continue
@@ -315,16 +340,17 @@ class RawDataAgent:
             self.execute_check(check_name)
 
         # 🔹 AGGREGATION LAYER (NOT rule inference if rules already ran during checks)
-        files_analysed = self.raw_data.keys()
+        files_analysed = list(self.raw_data.keys())
         metadata = {
             "summary_name": self.arguments.summary_name or None,
-            "sql_schema": self.arguments.sql_schema or None,
-            "sql_table": self.arguments.sql_table or None, 
-            "files_analyzed": ", ".join(map(str, files_analysed)),
+            "schema_name": self.arguments.schema_name or None,
+            "table_name": self.arguments.table_name or None, 
+            "files_analyzed": files_analysed,
             "analysis_timestamp": now,
-            "agent_version": self.agent_config.get('agent_version', 'tba'),
+            "agent_version": self.agent_config.get('version', 'tba'),
         }
         
+        print("Start generating prep_summary")
         self.state.preparation_summary = generate_preparation_summary(
                                                 self.raw_data, 
                                                 self.state.findings,

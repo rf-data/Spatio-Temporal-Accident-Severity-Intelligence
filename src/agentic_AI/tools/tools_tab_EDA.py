@@ -19,10 +19,14 @@ KNOWN_FORMATS = [
 
 ##############################
 # GENERAL
-##############################
+#############################
 @add_tool(tools_registry, 
       description="Create basic overview on data: shape, column names + dtypes",
-      category="raw_tab_file_EDA")
+      category="tabular",
+      eda=True,
+      default=True,
+      cross_file=False
+      )
 def basic_overview(df: pd.DataFrame, config: dict | None = None):
 
     return Observation(
@@ -35,28 +39,31 @@ def basic_overview(df: pd.DataFrame, config: dict | None = None):
                     "columns": list(df.columns),
                     "dtypes": df.dtypes.astype(str).to_dict()
                     },
-                recommendation_hint=None
+                recommendation_hint={}
                 )
 
 
 @add_tool(tools_registry, 
       description="Evaluates column-wise if there any NaN values.",
-      category="raw_tab_file_EDA")
+      category="raw_tab_file_EDA",
+      eda=True,
+      default=True,
+      cross_file=False)
 def missing_analysis(df: pd.DataFrame, config: dict | None = None):
     threshold = config["missing_analysis"].get("threshold", 0.5)
-    recomm = ""
-
+    
     recs = {}
     for col in df.columns:
         nan_ratio = df[col].isna().mean() 
         if nan_ratio > threshold:
             recs[col] = nan_ratio
     
-    if recs:
-        recomm = f"""
-        There are columns having a nan_ratio above the allowed threshold ({threshold}):\n
-        {recs.keys()}
-        """
+    
+    hint= {"missing": recs} if recs else {}
+        # recomm = f"""
+        # There are columns having a nan_ratio above the allowed threshold ({threshold}):\n
+        # {recs.keys()}
+        # """
 
     return Observation(
                 tool_name="missing_analysis",
@@ -73,13 +80,16 @@ def missing_analysis(df: pd.DataFrame, config: dict | None = None):
                                   .sort_values(ascending=False)
                                   .to_dict())
                     },
-                recommendation_hint={"missing": recomm}
+                recommendation_hint=hint
                 )
 
 
 @add_tool(tools_registry, 
       description="Evaluates column-wise if there any np.inf values.",
-      category="raw_tab_file_EDA")
+      category="raw_tab_file_EDA",
+      eda=True,
+      default=True,
+      cross_file=False)
 def infinite_analysis(df: pd.DataFrame, config: dict | None = None):
 
     num_df = df.select_dtypes(include=[np.number])
@@ -103,7 +113,7 @@ def infinite_analysis(df: pd.DataFrame, config: dict | None = None):
         if inf_count > 0:
             recs[col] = int(inf_count)
 
-    hint = {"infinite": recs} if recs else None
+    hint = {"infinite": recs} if recs else {}
     
     return Observation(
                 tool_name="infinite_analysis",
@@ -120,7 +130,10 @@ def infinite_analysis(df: pd.DataFrame, config: dict | None = None):
 
 @add_tool(tools_registry, 
       description="Checks if there any duplicates.",
-      category="raw_tab_file_EDA")
+      category="raw_tab_file_EDA",
+      eda=True,
+      default=True,
+      cross_file=False)
 def duplicate_analysis(df: pd.DataFrame, config: dict | None = None):
     threshold = config["duplicate_analysis"].get("threshold", None)
     grouping = config["duplicate_analysis"].get("grouping", [])
@@ -137,31 +150,37 @@ def duplicate_analysis(df: pd.DataFrame, config: dict | None = None):
         n_dups_group = df.groupby(grouping).duplicated().sum()
         ratio_dups_group = df.groupby(grouping).duplicated().mean()
 
-    recs = []
+    recommendation = {}
     if ratio_dups > threshold: 
-        recs.append("High duplicates ratio (general)")
+        recommendation["duplicate_ratio (general)"] = ratio_dups
 
     if isinstance(ratio_dups_group, (float, int)) and ratio_dups_group > threshold:
-        recs.append("High duplicates ratio (grouping)")
+        recommendation["duplicate_ratio (grouped)"] = ratio_dups_group
+
+    hint = {"duplicates": recommendation} if recommendation else {}
 
     return Observation(
-                tool_name="duplicate_analyis",
+                tool_name="duplicate_analysis",
                 category="raw_tab_file_EDA",
                 column="all",
                 description="Checks if there any duplicates.",
                 metrics={
                     "n_duplicates (general)": n_dups,
                     "duplicate_ratio (general)": ratio_dups,
+                    "grouping": grouping,
                     "n_duplicates (grouped)": n_dups_group,
                     "duplicate_ratio (grouped)": ratio_dups_group
                     },
-                recommendation_hint={"duplicates": recs}
+                recommendation_hint=hint
                 )
 
 
 @add_tool(tools_registry, 
       description="Compiles a descriptive statistics on numeric columns.",
-      category="raw_tab_file_EDA")
+      category="raw_tab_file_EDA", 
+      eda=True,
+      default=True,
+      cross_file=False)
 def numeric_summary(df: pd.DataFrame, config: dict | None = None):
     #
     perc = config["numeric_summary"].get("percentiles", [0.25, 0.5, 0.75])
@@ -176,7 +195,11 @@ def numeric_summary(df: pd.DataFrame, config: dict | None = None):
         skew_col[col] = numeric_df[col].skew(numeric_only=True, skipna=True)
         kurt_col[col] = numeric_df[col].kurtosis(numeric_only=True, skipna=True)
 
-    recs = recommend_from_distribution(skew_col, kurt_col)
+    recs = recommend_from_distribution(skew_col, 
+                                       kurt_col, 
+                                       config)
+
+    hint = {"Skew_Kurt": recs} if recs else {}
 
     return Observation(
                 tool_name="numeric_summary",
@@ -188,7 +211,7 @@ def numeric_summary(df: pd.DataFrame, config: dict | None = None):
                     "skewness": skew_col,
                     "kurtosis": kurt_col
                     },
-                recommendation_hint={"Skew_Kurt": recs}
+                recommendation_hint=hint
                 )
 
 
@@ -197,7 +220,10 @@ def numeric_summary(df: pd.DataFrame, config: dict | None = None):
       Compiles a descriptive statistics on categorical columns 
       (n_unique, cardinality, top_values).
       """,
-      category="raw_tab_file_EDA")
+      category="raw_tab_file_EDA",
+      eda=True,
+      default=True,
+      cross_file=False)
 def categorical_summary(df: pd.DataFrame, config: dict):
     #
     top_n =  config["categorical_summary"].get("top_n", 10)
@@ -217,7 +243,7 @@ def categorical_summary(df: pd.DataFrame, config: dict):
 
         top[col] = df[col].value_counts().head(top_n).to_dict()
     
-    hint = {"cardinality": cardinality} if cardinality else None
+    hint = {"cardinality": cardinality} if cardinality else {}
     
     return Observation(
                 tool_name="categorical_summary",
@@ -235,18 +261,45 @@ def categorical_summary(df: pd.DataFrame, config: dict):
                 recommendation_hint=hint
                 )
 
+
+def datetime_already_split(df):
+
+    parts = ["year", "month","day","hour","minute", "second"
+             "an","mois","jour", "heure", "seconde"
+             "yr", "sec", "hrmn",
+             "Jahr", "Monat", "Tag", "Stunde", "Sekunde"]
+
+    found = [c for c in df.columns if c.lower() in parts]
+
+    return {
+        "detected_parts": found,
+        "already_split": len(found) >= 2
+    }
+
+
 @add_tool(tools_registry, 
       description="Checks if column can be transformed into 'datetime'.",
-      category="raw_tab_file_EDA")
-def detect_datetime_candidates(df: pd.DataFrame, config: dict | None = None):
-    candidates = []
+      category="raw_tab_file_EDA",
+      eda=True,
+      default=True,
+      cross_file=False)
+def detect_datetime_candidates(df: pd.DataFrame, 
+                               config: dict | None = None):
+    candidates = {
+        "single_col": [],
+        "splitted_cols": []
+        }
 
+    split_dict = datetime_already_split(df)
+    
+    if split_dict["already_split"]:
+        candidates["splitted_cols"] = split_dict["detected_parts"]
 
     obj_cols = df.select_dtypes(include=["object", "string"]).columns
 
     for col in obj_cols:
         if "date" in col.lower():
-            candidates.append(col)
+            candidates["single_col"].append(col)
             continue
 
         sample = df[col].dropna().astype(str).head(100)
@@ -259,9 +312,9 @@ def detect_datetime_candidates(df: pd.DataFrame, config: dict | None = None):
             success_ratio = parsed.notna().mean()
 
             if success_ratio > 0.8:
-                candidates.append(col)      
+                candidates["single"].append(col)      
 
-    hint = {"dt_candidates": candidates} if candidates else None
+    hint = {"dt_candidates": candidates} if candidates else {}
     
     return Observation(
                 tool_name="detect_datetime_candidates",
@@ -269,7 +322,7 @@ def detect_datetime_candidates(df: pd.DataFrame, config: dict | None = None):
                 column="str- + obj-columns",
                 description="Detects datetime-like columns based on parsing success ratio.",
                 metrics={
-                    "datetime_candidates": candidates
+                    "dt_candidates": candidates
                     },
                 recommendation_hint=hint
                 )
@@ -279,7 +332,10 @@ def detect_datetime_candidates(df: pd.DataFrame, config: dict | None = None):
 ##############################
 @add_tool(tools_registry, 
       description="Evaluates column-wise if zero-inflated.",
-      category="raw_tab_file_EDA")
+      category="raw_tab_file_EDA", 
+      eda=True,
+      default=True,
+      cross_file=False)
 def zero_inflation_analysis(df: pd.DataFrame, config: dict = None):
     #
     threshold = config["zero_inflation_analysis"].get("threshold", None)
@@ -292,7 +348,7 @@ def zero_inflation_analysis(df: pd.DataFrame, config: dict = None):
         if zero_ratio > threshold:
             result[col] = zero_ratio
 
-    hint = {"zero_inf": result} if result else None 
+    hint = {"zero_inf": result} if result else {}
 
     return Observation(
                 tool_name="zero_inflation_analysis",
@@ -304,113 +360,3 @@ def zero_inflation_analysis(df: pd.DataFrame, config: dict = None):
                     },
                 recommendation_hint=hint
                 )
-
-
-@add_tool(tools_registry, 
-      description="Pairwise schema comparison between DataFrames",
-      category="raw_tab_cross_file_EDA")
-def cross_file_schema_compare(dfs: dict[str, pd.DataFrame], config: dict | None = None):
-
-    schema = {name: set(df.columns) for name, df in dfs.items()}
-    names = list(schema.keys())
-    
-    comparison = {}
-
-    for i in range(len(names)):
-        for j in range(i+1, len(names)):
-            a = names[i]
-            b = names[j]
-
-            comparison[f"{a}_vs_{b}"] = {
-                    "file_a": a,
-                    "file_b": b,
-                    "only_in_a": list(schema[a] - schema[b]),
-                    "only_in_b": list(schema[b] - schema[a]),
-                    "common": list(schema[a] & schema[b])
-                    }
-
-    return Observation(
-                tool_name="cross_file_schema_compare",
-                category="raw_tab_cross_file_EDA",
-                column="all columns",
-                description="Pairwise schema comparison between DataFrames",
-                metrics={
-                    "comparison": comparison
-                    },
-                recommendation_hint=None
-                )
-
-
-@add_tool(tools_registry, 
-        description="""
-        Evaluates df-wise if and how data could be merged 
-        (common_values, type_conflicts, cardinality_mismatch)
-        """,
-        category="raw_tab_cross_file_EDA")
-def merge_analysis(dfs: dict[str, pd.DataFrame], schema_compare: dict):
-
-    # col_dict = {}
-    # dtype_dict = {}
-
-    results = {}
-    for pair_name, pair_info in schema_compare.items():
-        a = pair_info["file_a"]
-        b = pair_info["file_b"]
-        common_cols = pair_info["common"]
-
-        df_a = dfs[a]
-        df_b = dfs[b]
-
-    type_conflicts = {}
-    cardinality = {}
-
-    for col in common_cols:
-        # dtype comparison
-        dtype_a = str(df_a[col].dtype)
-        dtype_b = str(df_b[col].dtype)
-        
-        if dtype_a != dtype_b:
-            type_conflicts[col] = {
-                            a: dtype_a,
-                            b: dtype_b
-                            }
-            
-        # cardinality comparison
-        nunique_a = df_a[col].nunique(dropna=True)
-        nunique_b = df_b[col].nunique(dropna=True)
-
-        if min(nunique_a, nunique_b) > 0:
-            ratio = max(nunique_a, nunique_b) / min(nunique_a, nunique_b)
-        else:
-            ratio = None
-
-        if ratio and ratio > 10:
-            cardinality[col] = {
-                a: nunique_a,
-                b: nunique_b,
-                "ratio": ratio
-                }
-
-        results[pair_name] = {
-                    "file_a": a,
-                    "file_b": b,
-                    "common_columns": common_cols,
-                    "type_conflicts": type_conflicts,
-                    "cardinality_mismatch": cardinality
-                    }
-
-    return Observation(
-                tool_name="merge_analysis",
-                category="raw_tab_cross_file_EDA",
-                column="all columns",
-                description="""
-                Evaluates df-wise if and how data could be merged 
-                (common_values, type_conflicts, cardinality_mismatch)
-                """,
-                metrics={
-                    "comparison": results
-                    },
-                recommendation_hint=None
-                )
-
-    

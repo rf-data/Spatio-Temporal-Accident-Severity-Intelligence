@@ -1,7 +1,7 @@
 ## findings.py
 # imports
 from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Set
 from enum import Enum
 
 
@@ -74,14 +74,14 @@ class DiagnosticFinding(BaseModel):
     category: str
     # issue_type: str
     column: Optional[str]
-    metrics: Optional[dict]
+    metrics: Optional[Dict]
     severity: Optional[str]
-    recommendation_hint: Optional[str | dict]
+    recommendation_hint: Optional[str | Dict]
 
 
 class ActionSchema(BaseModel):
     action: str
-    target: List[str] | None = None
+    target: List[str] | Set[str] | Dict[str, List | float | Dict] | None = None
     params: dict | None = None
 
     model_config = {

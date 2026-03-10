@@ -19,20 +19,40 @@ class ToolMeta(BaseModel):
     name: str
     description: str
     category: str
+    eda: bool
+    default: bool
+    cross_file: bool
     function: Callable
 
 
+    function: Callable
 class ToolRegistry:
     def __init__(self):
         self._tools: Dict[str, ToolMeta] = {}
 
-    def register(self, name: str, description: str, category: str, func: Callable):
+    def register(self, name: str, 
+                 description: str, 
+                 category: str, 
+                 eda: bool,
+                default: bool,
+                cross_file: bool,
+                 func: Callable):
         if name in self._tools:
-            raise ValueError(f"Tool '{name}' already registered.")
+            print(f"""
+                [INFO] Tool '{name}' already registered. 
+                  Skip and continue with next tool.
+                  """)
 
         self._tools[name] = ToolMeta(
-            name=name, description=description, category=category, function=func
+            name=name, 
+            description=description, 
+            category=category, 
+            eda=eda,
+            default=default,
+            cross_file=cross_file,
+            function=func
         )
+
 
     def get(self, name: str) -> Callable:
         return self._tools[name].function
@@ -45,7 +65,10 @@ class ToolRegistry:
             {
                 "name": meta.name,
                 "description": meta.description,
-                "category": meta.category,
+                "category": meta.category, 
+                "eda": meta.eda,
+                "default": meta.default,
+                "cross_file": meta.cross_file
             }
             for meta in self._tools.values()
         ]
@@ -54,16 +77,26 @@ class ToolRegistry:
 tools_registry = ToolRegistry()
 
 
-def add_tool(registry: ToolRegistry, description: str, category: str):
+def add_tool(registry: ToolRegistry, 
+             description: str, 
+             category: str,
+             eda: bool,
+            default: bool,
+            cross_file: bool
+             ):
     def decorator(func):
         registry.register(
-            name=func.__name__, description=description, category=category, func=func
+            name=func.__name__, 
+            description=description, 
+            category=category, 
+            func=func,
+            eda=eda,
+            default=default,
+            cross_file=cross_file,
         )
         return func
 
     return decorator
-
-
 ###################################################################################################################
 # -----------------------------------------------------------------------------------------------------------------
 ###################################################################################################################

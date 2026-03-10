@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import argparse
+import pkgutil
+
 
 from src.agentic_AI.agent.constraints import ALLOWED_TABLES, FORBIDDEN_KEYWORDS
 
@@ -33,7 +35,7 @@ def guard_report_creation(config: dict, report: bool = True, force: bool = False
     name_arg = "report" if report else "summary"
 
     r_folder = os.getenv("FOLDER_REPORT")
-    r_name = config.get("arguments", None).get(f"{name_arg}_name", None)
+    r_name = config.get("general_args", None).get(f"{name_arg}_name", None)
 
     md_path = Path(r_folder) / f"audit_{r_name}.md"
     json_path = Path(r_folder) / f"audit_{r_name}.json"
@@ -52,6 +54,14 @@ def guard_report_creation(config: dict, report: bool = True, force: bool = False
 def fill_registry_with_module(module_path: str):
     importlib.import_module(module_path)
 
+
+def load_modules(package):
+
+    print("Loading check/tool modules:")
+    for _, module_name, _ in pkgutil.iter_modules(package.__path__):
+        name = f"{package.__name__}.{module_name}"
+        importlib.import_module(name)
+        print(" -", name)
 
 def validate_query(query: str) -> tuple[bool, str]:
     query_clean = query.strip().upper()

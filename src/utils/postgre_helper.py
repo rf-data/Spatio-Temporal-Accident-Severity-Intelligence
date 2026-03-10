@@ -132,7 +132,8 @@ def get_engine(env_name=".env"):
     pw = os.getenv("POSTGRE_PASSWORD")
     db = os.getenv("DB_NAME")
 
-    engine = create_engine(f"postgresql+psycopg2://{user}:{pw}@localhost:5432/{db}")
+    engine = create_engine(f"postgresql+psycopg2://{user}:{pw}@localhost:5432/{db}",
+                           echo=False)
 
     return engine
 
