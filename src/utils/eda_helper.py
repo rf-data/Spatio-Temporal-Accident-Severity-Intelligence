@@ -6,6 +6,20 @@ import matplotlib.pyplot as plt
 import scipy.stats as stats
 
 
+
+
+def count_nan_by_column(df):
+    if df.isna().sum().sum() == 0:
+        print("No 'NaN' found. ")
+    else:
+        for col in df.columns:
+            nan_count = df[col].isna().sum()
+            if nan_count > 0:
+                print(f"- {col}\t{nan_count}")
+
+    return 
+
+
 # === Feature description ===
 def describe_features_stats(
     df,

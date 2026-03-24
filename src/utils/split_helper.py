@@ -2,8 +2,35 @@
 from sklearn.model_selection import train_test_split, GroupKFold, GroupShuffleSplit
 
 from src.core.session import session
-from src.core.mlflow_logger import get_experiment_logger
-import src.utils.preprocess_helper as pre
+
+# import src.utils.preprocess_helper as pre
+
+
+def split_data(data, config):
+    train_size = config.get("train_size", 0.7)
+    val_data = config.get("val_data", False)
+
+    if val_data:
+        test_size = (1 - float(train_size)) / 2
+    else: 
+        test_size = (1 - float(train_size))
+
+    n = len(data)
+
+    n_train = int(n * train_size)
+    n_val = int(n * test_size)
+
+    train_data = data[:n_train]
+
+    if val_data:
+        val_data = data[n_train:n_train+n_val]
+        test_data = data[n_train+n_val:]
+
+    else: 
+        test_data = data[n_train:]
+        val_data = []
+
+    return train_data, test_data, val_data
 
 
 def validation_split(model, X_train, y_train):
@@ -20,10 +47,12 @@ def validation_split(model, X_train, y_train):
 
 
 def group_split(X, y, split_mode="group_kfold"):
+    from src.core.mlflow_logger import get_experiment_logger
+    
     exp_logger = get_experiment_logger()
     event_logger = exp_logger.logger
 
-    X, groups = pre.make_feature_signature(X)
+    X, groups = make_feature_signature(X)
 
     random = session.parameters.get("random_state", 42)
     test_size = session.parameters.get("test_size", 0.2)

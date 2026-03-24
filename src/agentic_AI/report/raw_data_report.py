@@ -1,7 +1,7 @@
 ## raw_data_report.py
 # imports
 # from pydantic import BaseModel
-# from typing import Optional
+from typing import Optional, List
 # from datetime import datetime
 import os
 from pathlib import Path
@@ -35,9 +35,9 @@ def load_eda_summary(config):
 
     report_folder = os.getenv("FOLDER_REPORT")
 
-    arg_dict = config.get("general_args", {})
+    # arg_dict = config.get("general_args", {})
 
-    report_name = arg_dict.get("summary_file_name")
+    report_name = config.get("summary_file_name")
     report_path = Path(report_folder) / f"{report_name}.json"
     
     with open(report_path) as f:
@@ -250,6 +250,79 @@ def build_and_save_summary(summary: PreparationSummary,
             f.write(md_content)
 
     return     
+
+
+
+def extract_check_results(report: dict, 
+                          df_name: str | List,
+                          cols: str | List | None=None, 
+                          checks: str | List | None=None) -> dict: 
+                               
+                            #    df, lat_col: str, lon_col: str) -> dict
+    ...
+    """
+    Deskriptivstatistik
+    Nullanteil
+    Min/Max
+    Quantile
+    Beispiele verdächtiger Werte
+    """
+
+    if isinstance(cols, str):
+        cols = [cols]
+
+    if isinstance(checks, str):
+        checks = [checks]
+    
+    results = report.get("metric_results", None)
+
+    if results is None: 
+        raise KeyError("No key 'metric_results' in JSON_report.")
+
+    col_metrics = defaultdict(dict)
+            # "missing": {},
+            # "describe": {},
+            # }
+
+    for df_name, all_checks in results:
+
+        if checks is None:
+            col_metrics[df_name] = all_checks
+
+        else: 
+            for check_name, ch_results in all_checks.items():   
+                for check in checks:
+                    if check_name == check:
+                        col_metrics[df_name][check_name] = ch_results
+                    
+
+
+        #     col_miss = checks["missing"].get("metrics", None) # .get("nan_ratio", None)
+            
+        #     if col_miss is None:
+        #         print()
+
+        #     nan_count = col_miss.get("nan_count", {})
+        #     nan_ratio = col_miss.get("nan_ratio", {})
+
+        #     for col in geo_col:
+        #         col_metrics[df_name][col]["missing"] = {
+        #                             "count": nan_count[col],
+        #                             "ratio": nan_ratio[col]
+        #                             }
+
+        # if checks == "numeric":
+        #     col_descript = checks["numeric"].get("metrics", {}).get("df_describe", None)
+
+        #     if col_descript is None:
+        #         print()
+
+        #     for col in geo_col:
+        #         col_metrics[df_name][col]["describe"] = col_descript[col]
+
+        #         # col_metrics[df_name][col] = col_descript[col]
+
+    return col_metrics
 
 #######################################################################################
 # ------------------------------

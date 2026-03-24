@@ -30,13 +30,12 @@ import click
 @click.option("--name", prompt="Name of 'config_file'",
               help='The config_file to use.')
 def run_eda_agent(name):
-# def run_eda_agent():
     # (1) load config + parse arguments
     gh.load_env_vars()
 
     config_folder = os.getenv("CONFIG_PATH")
     config_path = Path(config_folder) / f"{name}.yaml"
-    config = fh.load_config(config_path)
+    config = fh.load_yaml_config(config_path)
 
     args = ah.parse_args()
 

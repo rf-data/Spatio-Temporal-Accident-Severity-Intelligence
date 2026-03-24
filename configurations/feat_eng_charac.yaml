@@ -1,0 +1,117 @@
+## yaml-file H3-GNN from "Characteristics" dataset
+
+# ------------------------------
+# GENERAL
+# ------------------------------
+general_args:
+  data_folder: Eigenschaften_characteristics
+  file_suffix: ["h3", "time"]
+  h3_folder: h3_resolutions
+  summary_file_name: charac_EDA_summary_v1_2026-03-09_11:33
+  years: ["2009"]
+
+time_processing:
+  enabled: true
+  time_col: hr_min
+  time_col_new: datetime
+  freq_values: ["monthly", "weekly", "two_weekly"]    # , "day"
+  necessary_cols: ["ID_accident", "month", "day", 
+                  "hr_min", "year", "time_clean", 
+                  "time_parsed", "hour", "minute"]
+  # timestamp_col: null
+  split_time_col:
+    dt_format: "%H:%M"
+    to_extract: ["hour", "minute"]
+    to_add: ["year", "month", "day"]
+  df_ts_cols: 
+    to_add: ["year", "month", "week", "weekday", "day", "hour", "minute"]
+    cyclic_encode: ["month", "week", "weekday", "day", "hour"]
+      # , "day"
+
+geo_processing:
+  enabled: true
+  dept_col: department
+  lat_col: latitude
+  lon_col: longitude
+  prim_key: ID_accident
+  # output_geom_col: geom
+  handle_invalid_coords: "nan"
+  domtom_filter: true
+  h3_values: [4, 5, 6, 7, 8, 9, 10]
+  necessary_cols: ["ID_accident", 
+                  "h3_res10", "h3_res9", "h3_res8",
+                  "h3_res7", "h3_res6", "h3_res5",
+                  "h3_res4",
+                  "longitude", "longitude_convert",
+                  "latitude", "latitude_convert"]
+
+  coordinate_detection:
+    # enabled: true
+    # classify_per_row: true
+    rules:
+      wgs84:
+        lon_min: -6
+        lon_max: 10
+        lat_min: 41
+        lat_max: 52
+      lambert93:
+        x_min: -500000    # longitude_like
+        x_max: 1500000    # longitude_like
+        y_min: 4000000    # latitude_like
+        y_max: 5500000    # latitude_like
+
+
+# ----------------------------------
+# FEATURE ENGINEERING / SQL_UPLOAD
+# ----------------------------------
+
+columns:
+  dt_col: []
+  geo_col: ["latitude", "longitude"] 
+  to_drop: ["address", "commune", "agg", 
+            "geographical group"]
+  numeric: ["ID_accident", "year", "month", 
+            "latitude", "longitude", "weather_type",
+            "collision_type", "hr_min", "interception_type", 
+            "light_condition"]
+  categorical: ["department"]
+
+Feat_Eng:
+  schema_name: features
+  schema_version: 1
+  table_name: characteristics
+  drop_existing_table: True
+  primary_key: "ID_accident"
+  to_keep: ["ID_accident",
+            "month_sin", "month_cos", 
+            "week_sin", "week_cos",
+            "weekday_sin", "weekday_cos",
+            "day_sin", "day_cos",
+            "hour_sin", "hour_cos",
+            "h3res4", "h3res5", "h3res6",
+            "h3res7", "h3res8", "h3res9", "h3res10",
+            # "lat_convert", "lon_convert"
+            ]
+  sql_dtypes: {
+    "ID_accident": BIGINT,
+    "month_sin": DOUBLE PRECISION,
+    "month_cos": DOUBLE PRECISION,
+    "week_sin": DOUBLE PRECISION,
+    "week_cos": DOUBLE PRECISION,
+    "weekday_sin": DOUBLE PRECISION,
+    "weekday_cos": DOUBLE PRECISION,
+    "day_sin": DOUBLE PRECISION,
+    "day_cos": DOUBLE PRECISION,
+    "hour_sin": DOUBLE PRECISION,
+    "hour_cos": DOUBLE PRECISION,
+    "h3res4": TEXT, 
+    "h3res5": TEXT, 
+    "h3res6": TEXT, 
+    "h3res7": TEXT, 
+    "h3res8": TEXT, 
+    "h3res9": TEXT,
+    "h3res10": TEXT,  
+    "feature_set": SMALLINT
+    # "lat_convert": DOUBLE PRECISION,
+    # "lon_convert": DOUBLE PRECISION,
+  }

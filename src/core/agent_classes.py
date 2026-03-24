@@ -267,7 +267,7 @@ class RawDataAgent:
 
 
     def load_data(self):
-
+        
         p_folder = Path(self.arguments.folder)
         data_folder = Path(self.arguments.data_folder)
 
@@ -278,13 +278,14 @@ class RawDataAgent:
 
         dfs = {}
         for f in csv_files:
+
             f_name =  str(f.name)
             if "-" in f_name:
                 f_new = f_name.replace("-", "_")
             else: 
                 f_new = f_name
 
-            dfs[f_new] = fh.read_french_csv_smart(f)
+            dfs[f_new] = fh.read_french_csv_smart(f_new)
 
         for f in parquet_files:
             f_name =  str(f.name)

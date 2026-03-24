@@ -14,6 +14,7 @@ def find_project_root() -> Path:
 
 
 def ensure_dir(f_path: Union[str | Path]) -> Path:
+    
     p = Path(f_path)
 
     target_dir = p.parent if p.suffix else p

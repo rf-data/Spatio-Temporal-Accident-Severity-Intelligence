@@ -42,8 +42,7 @@ general_args:
   summary_name: charac
   summary_file_name: charac_EDA_summary_v1_2026-03-09_11:33
   data_folder: Eigenschaften_characteristics
-  schema_name: clean
-  table_name: characteristics
+  file_suffix: clean
 
 # ------------------------------
 # RAW DATA
@@ -80,12 +79,20 @@ tool_args:
 # FEATURE ENGINEERING / SQL_UPLOAD
 # ----------------------------------
 
-columns:
+Feat_Eng:
+  schema_name: clean
+  schema_version: v1
+  table_name: characteristics
   dt_col: []
   geo_col: ["latitude", "longitude"] 
+  drop_existing_table: False
   primary_key: "ID_accident"
-  to_drop: ["address", "commune", "agg", 
-            "geographical group"]
+  to_keep: ["ID_accident", 
+            "year", "month", "day", "hr_min",
+            "weather_type", "collision_type", 
+            "interception_type", "light_condition",
+            "latitude", "longitude", 
+            "department", "address"]
   numeric: ["ID_accident", "year", "month", 
             "latitude", "longitude", "weather_type",
             "collision_type", "hr_min", "interception_type", 
@@ -114,16 +121,16 @@ columns:
   sql_dtypes: {
     "ID_accident": BIGINT,
     "year": SMALLINT,
+    "month": SMALLINT,
+    "day": SMALLINT,
+    "hr_min": VARCHAR(255),
     "weather_type": SMALLINT,
     "collision_type": SMALLINT,
     "interception_type": SMALLINT,
-    "day": SMALLINT,
     "light_condition": SMALLINT,
-    "month": SMALLINT,
-    "department": VARCHAR(255),
-    "hr_min": VARCHAR(255),
     "latitude": DOUBLE PRECISION,
     "longitude": DOUBLE PRECISION,
+    "department": VARCHAR(255),
     "address": VARCHAR(255)
   }
 

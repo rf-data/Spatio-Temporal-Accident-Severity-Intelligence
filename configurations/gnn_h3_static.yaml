@@ -1,0 +1,41 @@
+## yaml-file H3-GNN from "Characteristics" dataset
+
+# ------------------------------
+# GENERAL
+# ------------------------------
+general_args:
+  data_folder: ml_ready
+  file_suffix: ["new_v2"]
+  summary_file_name: charac_EDA_summary_v1_2026-03-09_11:33
+  preparation_time: 2026-03-23_13:03
+  snapshots_name: snapshots_base_v2
+  data_name: data_base_v2
+  edge_idx_name: edge_index
+  ml_df: 2026-03-22_12:32_df_merged 
+
+gnn_settings:
+  h3_col: h3_res4
+  period_col: time_bin
+  target_col: n_accidents
+  target_lvl_1: has_accident
+  target_lvl_2: n_accidents
+  period: M
+  cyclic_encoding: True
+  min_events: 2
+  neighbor_distance: 1
+  include_self_loops: True
+  criterion: bce_log_loss
+  train_size: 0.7
+  val_data: True
+  in_dim: 1
+  hidden_dim: 32
+  dropout: 0.2
+  n_epoch: 1
+  optimizer: adam
+  learn_rate: 1e-3
+  weight_decay: 1e-4
+  
+  # file_suffix: ["h3", "time"]
+  # h3_folder: h3_resolutions
+  # summary_file_name: charac_EDA_summary_v1_2026-03-09_11:33
+  # years: ["2009"]

@@ -24,6 +24,241 @@ import src.utils.path_helper as ph
 import src.utils.visualisation_helper as viz
 
 
+def normalize_series(s):
+    return (s - s.min()) / (s.max() - s.min() + 1e-9)
+
+
+def compute_score(df_in):
+    # filter out unnecessary columns
+    to_filter = [
+            "freq", 
+            "res",
+            "entropy",
+            "non_zero_share",
+            "var",
+            "time_stability (correlation)",
+            "time_stability (difference)",
+            "nan_stability",
+            "event_intensity_mean", 
+            "event_intensity_median", 
+            "median_non_zero_mean", 
+            "median_non_zero_median", 
+            "active_bins_mean", 
+            "active_bins_median"
+            ]
+    
+    df = df_in[to_filter].copy()
+
+    df["time_stability (correlation)"] = df["time_stability (correlation)"].clip(lower=0)
+    df["time_stability (correlation)"] = df["time_stability (correlation)"].fillna(0)
+
+    df["time_stability (difference)"] = df["time_stability (difference)"].fillna(0)
+
+    # df["nan_stability"] = df["nan_stability"].fillna(0)
+         
+    # Normierungen
+    df["entropy_norm"] = normalize_series(df["entropy"])
+    df["non_zero_norm"] = normalize_series(df["non_zero_share"])
+    df["var_norm"] = normalize_series(df["var"])
+    df["time_stab_norm (correlation)"] = normalize_series(df["time_stability (correlation)"])
+    df["time_stab_norm (difference)"] = normalize_series(df["time_stability (difference)"])
+    df["active_bins_median_norm"] = normalize_series(df["active_bins_median"])
+    df["median_non_zero_median_norm"] = normalize_series(df["median_non_zero_median"])
+
+    # Score (gewichtbar!)
+    df["score_diff"] = (
+        + 0.4 * df["entropy_norm"]      # hohe Info gut
+        + 0.3 * df["non_zero_norm"]         # viele Nullen schlecht
+        - 0.3 * df["var_norm"]          # extreme Varianz schlecht
+        + 0.2 * df["time_stab_norm (difference)"]    # stabile Zeitstruktur gut
+    )
+
+    df["score_corr"] = (
+        + 0.4 * df["entropy_norm"]      # hohe Info gut
+        + 0.3 * df["non_zero_norm"]         # viele Nullen schlecht
+        - 0.3 * df["var_norm"]          # extreme Varianz schlecht
+        + 0.2 * df["time_stab_norm (correlation)"]    # stabile Zeitstruktur gut
+    )
+
+    df["score"] = (
+        0.6 * df["active_bins_median_norm"] +
+        0.4 * df["median_non_zero_median_norm"]
+        )
+    
+    return df
+
+
+def retrieve_base_stat(df, config):
+    
+    target_col = config.get("target_col", "n_accidents")
+
+    s = df[target_col].dropna()
+    # s_non_zero = df[df[target_col] > 0][target_col].dropna()
+
+    mean = s.mean()
+    # mean_non_zero = s_non_zero.mean()
+    var = s.var()
+    # var_non_zero = s_non_zero.var()
+
+    stat = {
+        "rows": len(s),
+        "sum": s.sum(),
+        "min": s.min(),
+        "mean": mean if mean > 1e-6 else np.nan,
+        # "mean_non_zero": mean_non_zero if mean_non_zero > 1e-6 else np.nan,
+        "var": var,
+        # "var_non_zero": var_non_zero,
+        "std": s.std(),
+        "dispersion": var / mean if mean > 1e-6 else np.nan,
+        # "dispersion_non_zero": var_non_zero / mean_non_zero if mean_non_zero > 1e-6 else np.nan,
+        "q25": s.quantile(0.25),
+        "median": s.quantile(0.5),
+        "q75": s.quantile(0.75),
+        "q90": s.quantile(0.9),
+        "q95": s.quantile(0.95),
+        "q99": s.quantile(0.99),
+        "max": s.max(),
+        "non_zero_count": (s != 0).sum(),
+        "non_zero_share": (s != 0).mean()
+    }
+
+    return stat
+
+
+def calculate_entropy(df, config):
+    
+    target_col = config.get("target_col", "n_accidents")
+    
+    x = df[target_col]   # .value_counts(normalize=True)
+
+    if x.sum() == 0:
+        return np.nan
+    
+    p = x / x.sum()
+    p_clean = p[p > 0]
+
+    entropy = -(p_clean * np.log(p_clean)).sum()
+
+    return entropy
+
+
+def calculate_gini(df, config):
+    
+    target_col = config.get("target_col", "n_accidents")
+    
+    x = df[target_col].values
+    x_clean = x[x >= 0]
+    x_sort = np.sort(x_clean)
+    n = len(x_sort)
+
+    if n == 0 or np.sum(x_sort) == 0:
+        return np.nan
+
+    gini = (2 * np.sum((np.arange(1, n+1) * x_sort)) /
+           (n * np.sum(x_sort))) - ((n + 1) / n)
+
+    return gini
+
+
+def estimate_time_stability(df, config):
+    
+    res_col = config.get("res", "n_accidents")
+    freq_col = config.get("freq_col", "time_bin")
+    target_col = config.get("target_col", "n_accidents")
+
+    df = df.sort_values([res_col, freq_col])
+
+    def corr_per_cell(g):
+        g = g.sort_values(freq_col)
+        g["prev"] = g[target_col].shift(1)
+        g = g.dropna()
+
+        # guard 1: enough data?
+        if len(g) < 3:
+            return np.nan
+        
+        # guard 2: std > 0?
+        if g[target_col].std() == 0 or g["prev"].std() == 0:
+            return np.nan
+
+        return g[target_col].corr(g["prev"])
+    
+    corrs = df.groupby(res_col).apply(corr_per_cell)
+
+    time_stab = corrs.mean()
+    nan_stab = corrs.isna().mean()
+
+    time_stab_alter = df.groupby(res_col)[target_col].diff().abs().mean()
+
+    return time_stab, nan_stab, time_stab_alter
+
+
+def compute_active_bins_per_cell(df, config):
+    
+    res_col = config.get("res", "n_accidents")
+    target_col = config.get("target_col", "n_accidents")
+    
+    active_counts = (
+        df[df[target_col] > 0]
+        .groupby(res_col)
+        .size()
+    )
+
+    all_cells = df[res_col].unique()
+    active_counts = active_counts.reindex(all_cells, fill_value=0)
+
+    return {
+        "active_bins_mean": active_counts.mean(),
+        "active_bins_median": active_counts.median()
+    }
+
+
+def compute_median_non_zero_per_cell(df, config):
+    
+    res_col = config.get("res", "n_accidents")
+    target_col = config.get("target_col", "n_accidents")
+    
+    def cell_stat(g):
+        g_non_zero = g[g[target_col] > 0]
+        
+        if len(g_non_zero) == 0:
+            return np.nan
+        
+        return g_non_zero[target_col].median()
+
+    medians = df.groupby(res_col).apply(cell_stat)
+
+    return {
+        "median_non_zero_mean": medians.mean(),
+        "median_non_zero_median": medians.median()
+        }
+
+
+def compute_event_intensity(df, config):
+    
+    res_col = config.get("res", "n_accidents")
+    target_col = config.get("target_col", "n_accidents")
+    
+    active = (
+        df[df[target_col] > 0]
+        .groupby(res_col)
+        .size()
+    )
+    
+    intensity = (
+        df[df[target_col] > 0]
+        .groupby(res_col)[target_col]
+        .median()
+    )
+
+    combined = active * intensity
+
+    return {
+        "event_intensity_mean": combined.mean(),
+        "event_intensity_median": combined.median()
+    }
+
+
 def create_classification_report(y_true, y_pred):
     # setup logger
     # exp_logger = get_experiment_logger()

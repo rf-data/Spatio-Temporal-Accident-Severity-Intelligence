@@ -1,7 +1,6 @@
 ## geo_helper.py
 # imports
 from sqlalchemy import text
-import h3
 import pandas as pd
 import os
 
@@ -177,29 +176,6 @@ def add_h3_cols(h3_values):
                     table)
 
   return
-
-
-def create_h3_grid(df_in, h3_value: int | List):
-  # setup logger
-  logger = session.logger
-  logger.info("Start creating h3 geo_grid (H=%s)", h3_value)
-
-  # (1) Nur valide Geo
-  df = df_in[df_in["lat_norm"].notna() & df_in["lon_norm"].notna()].copy()
-
-  # (2) 
-  # vektorisieren oder via itertuples() beschleunigen
-  if isinstance(h3_value, int):
-    h3_value = [h3_value]
-
-  for val in h3_value:
-    df[f"h3_res{val}"] = df.apply(
-                          lambda r: h3.latlng_to_cell(r["lat_norm"], 
-                                                      r["lon_norm"], 
-                                                      val),
-                                                      axis=1)
-
-  return df
 
 
 def create_crosstable(value, 
