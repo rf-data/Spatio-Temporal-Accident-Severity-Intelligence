@@ -27,7 +27,7 @@ SQL Upload Agent	Loads prepared datasets into PostgreSQL and validates ingestion
 Audit Agent	        Runs structured analytical checks and generates audit-style reports
 ```
 
-Each agent follows a tool-based architecture where analytical functions ("checks") can be dynamically registered and executed.
+Each agent follows a tool-based architecture where analytical functions (`tools` + `checks`) can be dynamically registered and executed.
 
 ### Key Features
 - modular check registry   
@@ -48,7 +48,7 @@ Each agent follows a tool-based architecture where analytical functions ("checks
 - dataset monitoring   
 - reinforcement-style analysis loops
 
-👉 See the [dedicated documentation](src/agent_AI/README.md):
+👉 See the [dedicated documentation](src/agentic_AI/README.md):
 
 ## Step 1: **Road Accident Risk Mapping** (Version: 0.1)
 ### Overview

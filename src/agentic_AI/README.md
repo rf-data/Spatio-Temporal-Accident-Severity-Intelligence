@@ -50,7 +50,7 @@ The agent generates audit-style analytical reports that summarize all checks.
 
 ## Architecture
 The system consists of four core components:
-
+```
 Agent
 │
 ├── State
@@ -60,11 +60,12 @@ Agent
 ├── Check Registry
 │
 └── Reporting Layer
+```
 
 ### Agent
 The agent coordinates the analysis process.
 
-**Responsibilities:***   
+**Responsibilities:**   
 - execute analytical checks   
 - update internal state   
 - generate reports
