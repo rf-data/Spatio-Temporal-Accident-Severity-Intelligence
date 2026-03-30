@@ -134,3 +134,6 @@ Feat_Eng:
     "address": VARCHAR(255)
   }
 
+# "ID_accident", "year", "month", "day", "hr_min", "weather_type", 
+# "collision_type", "interception_type", "light_condition", "latitude", 
+# "longitude", "department", "address"

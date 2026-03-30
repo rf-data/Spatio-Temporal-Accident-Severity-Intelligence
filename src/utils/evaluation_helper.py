@@ -390,8 +390,8 @@ def compile_roc_pr_auc(y_test, y_proba, data_viz=False, suffix=False):
 
         add = f"_{suffix}" if suffix else ""
 
-        pr_path = ph.create_save_path("plots", f"pr_curve{add}", "png")
-        roc_path = ph.create_save_path("plots", f"roc_auc{add}", "png")
+        pr_path = ph.create_save_path(f"pr_curve{add}", "png")
+        roc_path = ph.create_save_path(f"roc_auc{add}", "png")
 
         viz.create_roc_auc(y_test, y_proba, roc_path)
         viz.create_pr_curve(y_test, y_proba, pr_path)
@@ -400,6 +400,38 @@ def compile_roc_pr_auc(y_test, y_proba, data_viz=False, suffix=False):
         # exp_logger.log_artifact(pr_path)
 
     return {"ROC_AUC": roc_auc, "PR_AUC": pr_auc}
+
+
+def find_best_threshold(y_true, y_proba, metric, beta=2):
+        
+        thresholds = np.linspace(0.01, 0.99, 100)
+        
+        metric_dict = {
+                "f2": fbeta_score, 
+                "precision": "",
+                "recall": "",
+                }
+
+        eval_metric = metric_dict[metric]
+
+        scores = []
+        
+        for t in thresholds:
+            y_pred = (y_proba >= t).astype(int)
+
+            if metric == "f2":
+                score = eval_metric(y_true, y_pred, beta=beta)
+            else: 
+                score = eval_metric(y_true, y_pred)
+
+            scores.append(score)
+        
+        best_idx = np.argmax(scores)
+        
+        return {
+            "best_threshold": thresholds[best_idx],
+            "best_score": scores[best_idx]
+            }
 
 
 def importance_by_permutation(pipe, data_dict, data_viz=False):
@@ -445,55 +477,108 @@ def importance_by_permutation(pipe, data_dict, data_viz=False):
         viz.viz_permutation_importance(perm_df, save_path=True)
 
     # save perm_df
-    df_path = ph.create_save_path("PermImport_df", "perm", "csv")
+    df_path = ph.create_save_path("permut_imp", "csv")
     perm_df.to_csv(df_path, index=False)
     logger.info("Saved permutation_importance_df in ...%s", ph.shorten_path(df_path))
 
     return perm_df
 
 
-def create_coef_df(pipe, save=None, data_viz=None):
+def create_tree_importance_df(pipe, save=False,):
     # setup logger
     logger = session.logger
+    logger.info("Start creating 'coef_df' (light_gbm).")
 
     # extract parameter
     model = pipe.named_steps["model"]
+    feats = getattr(model, "feature_name_", None)
+    
+    importances = model.feature_importances_
+    
+    df = pd.DataFrame({
+        "feature": feats,
+        "importance": importances
+    })
+
+    df["rank"] = df["importance"].rank(ascending=False)
+
+    if save:
+        df_path = ph.create_save_path("coefs", "csv")
+        df.to_csv(df_path, index=False)
+        logger.info("Saved coef_df in ...%s", ph.shorten_path(df_path))
+
+
+    return df.sort_values("importance", ascending=False)
+
+
+def create_coef_df(pipe, save=False, data_viz=False):
+    # setup logger
+    logger = session.logger
+    logger.info("Start creating 'coef_df' (linear / LogReg).")
+    
+    # extract parameter
+    model = pipe.named_steps["model"]
+    feats = pipe.named_steps["preprocess"].get_feature_names_out()
     classes = model.classes_
     coefs = model.coef_  # shape: (n_classes, n_features)
-    # ohe = pipe.named_steps["preprocess"].named_transformers_["cat"]
 
     coef_list = []
-    feats = pipe.named_steps["preprocess"].get_feature_names_out()
 
-    for i, cls in enumerate(classes):
-        df_tmp = pd.DataFrame({"feature": feats, "coef": coefs[i], "class": cls})
+    # --- CASE 1: Binary ---
+    if coefs.shape[0] == 1:
+        cls = classes[1]  # positive class
+
+        df_tmp = pd.DataFrame({
+            "feature": feats,
+            "coef": coefs[0],
+            "class": cls
+        })
+
+        df_tmp["effect"] = np.where(df_tmp["coef"] > 0,
+                                    "increase", 
+                                    "decrease")
+
         coef_list.append(df_tmp)
 
-        logger.info("Created Coef_df (class=%s)", cls)
-
-    coef_df = pd.concat(coef_list).sort_values(
-        ["class", "coef"], ascending=[True, False]
-    )
-
+    # --- CASE 2: Multi-class ---
+    else:  
+        for i, cls in enumerate(classes):
+            df_tmp = pd.DataFrame({
+                        "feature": feats, 
+                        "coef": coefs[i], 
+                        "class": cls
+                        })
+            
+            df_tmp["effect"] = np.where(df_tmp["coef"] > 0,
+                                        "increase", 
+                                        "decrease")
+        
+            coef_list.append(df_tmp)
+    
+    coef_df = pd.concat(coef_list)
     coef_df["odds_ratio"] = np.exp(coef_df["coef"])
     coef_df["importance"] = np.abs(coef_df["coef"])
+    
+    coef_df = coef_df.sort_values(
+                        ["class", "coef"], 
+                        ascending=[True, False]
+                        )
 
     logger.info("Merged all coef_dfs, and added cols 'odds_ratio' and 'importance'.")
-    # logger.info("'coef_df' - top5 feature_imortance per class:\n%s",
-    #             coef_df\
-    #             .sort_values("odds_ratio", ascending=False)\
-    #             .groupby("class")
-    #             #  .head(5))
-    #              )
+    logger.info("Top features:\n%s",
+                (coef_df
+                .sort_values("importance", ascending=False)
+                .head(5))
+                ) 
 
     if data_viz:
-        coef_hm_path = ph.create_save_path("plots", "coef_heat", "png")
+        coef_hm_path = ph.create_save_path("coef_heat", "png")
 
         viz.viz_odds_ratios(coef_df, top_k=5, save_path=True)
         viz.viz_odds_heatmap(coef_df, save_path=coef_hm_path)
 
     if save:
-        df_path = ph.create_save_path("Coef_df", "coefs", "csv")
+        df_path = ph.create_save_path("coefs", "csv")
         coef_df.to_csv(df_path, index=False)
         logger.info("Saved coef_df in ...%s", ph.shorten_path(df_path))
 

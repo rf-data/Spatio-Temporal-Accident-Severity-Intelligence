@@ -5,6 +5,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
 
+
+class GNNPipeline:
+
+    def __init__(self, preprocess, model_fn, config):
+        self.preprocess = preprocess
+        self.model_fn = model_fn
+        self.config = config
+
+    def fit(self, train_df):
+        data = self.preprocess(train_df)
+        self.result = self.model_fn(data, self.config)
+        return self
+
+    def predict(self, test_df):
+        data = self.preprocess(test_df)
+        return self.model_fn.predict(data)
+    
+
 class SimpleGNN(torch.nn.Module):
     def __init__(self, in_dim):
         super().__init__()

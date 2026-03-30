@@ -14,6 +14,8 @@ from sklearn.metrics import (
 import seaborn as sns
 import numpy as np
 
+import src.utils.path_helper as ph
+
 
 # === Display helpers ===
 def show_overview(df, name):
@@ -109,7 +111,7 @@ def viz_odds_ratios(coef_df, top_k=5, save_path=None):
         plt.tight_layout()
 
         if save_path:
-            coef_path = ph.create_save_path("plots", f"coef_{cls}", "png")
+            save_path = ph.create_save_path(f"coef_{cls}", "png")
             plt.savefig(save_path, dpi=150)
 
         plt.show()
@@ -150,7 +152,7 @@ def viz_permutation_importance(perm_df, top_k=10, save_path=None):
     plt.tight_layout()
 
     if save_path:
-        perm_path = ph.create_save_path("plots", f"PermImp", "png")
+        perm_path = ph.create_save_path(f"permut_imp", "png")
         plt.savefig(perm_path, dpi=300)
 
     plt.show()

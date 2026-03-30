@@ -4,16 +4,18 @@ import click
 import os
 import matplotlib.pyplot as plt
 from pathlib import Path
-import numpy as np
-import pandas as pd
 from datetime import datetime
+# import numpy as np
+# import pandas as pd
+# from datetime import datetime
 from sklearn.metrics import precision_score, recall_score, f1_score
 
-import h3
+# import h3
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.nn import GCNConv
+from torch_geometric.loader import DataLoader
+# import torch.nn as nn
+# import torch.nn.functional as F
+# from torch_geometric.nn import GCNConv
 
 
 # print(torch.__version__)
@@ -22,18 +24,21 @@ from torch_geometric.nn import GCNConv
 # from torch_geometric.data import Data
 # from torch_geometric.nn import GCNConv
 
+from src.core.session import session
 from src.utils.file_helper import get_yaml_config
 import src.utils.general_helper as gh
 import src.utils.file_helper as fh
-import src.utils.path_helper as ph
-import src.utils.df_helper as dfh
+# import src.utils.gnn_helper as gnn
+
+# import src.utils.path_helper as ph
+# import src.utils.df_helper as dfh
 import src.utils.split_helper as split
-from src.utils.gnn_helper import (build_simple_binary_gnn, 
-                                  train_n_epoch,
-                                  baseline_prob_persistence,
-                                  baseline_persistence, 
-                                  baseline_zero, 
-                                  baseline_one)  # as gnn
+import src.utils.gnn_helper as gnn
+        # (build_simple_binary_gnn, 
+        #                           baseline_prob_persistence,
+        #                           baseline_persistence, 
+        #                           baseline_zero, 
+        #                           baseline_one)  # as gnn
 
 # Approach:   Static Graph + temporal features
 """
@@ -55,6 +60,8 @@ uv pip install torch-geometric -f https://data.pyg.org/whl/torch-2.10.0+cpu.html
 """
 
 
+
+
 # Part D: time-aware train-test-split
 
 
@@ -64,15 +71,142 @@ uv pip install torch-geometric -f https://data.pyg.org/whl/torch-2.10.0+cpu.html
 
     # gh.load_env_vars()
 
-def evaluate(y_true, y_pred, name="model"):
-    y_true = y_true.numpy()
-    y_pred = y_pred.numpy()
+def train_n_epoch(train_data, 
+                  test_data, 
+                  feats,
+                  gnn_config):
+    # setup logger
+    logger = session.logger
 
-    print(f"\n{name}")
-    print("Precision:", precision_score(y_true, y_pred, zero_division=0))
-    print("Recall   :", recall_score(y_true, y_pred, zero_division=0))
-    print("F1       :", f1_score(y_true, y_pred, zero_division=0))
+    # 
+    n_epochs = int(gnn_config["n_epochs"])       # , 1)
+    learn_rate = float(gnn_config["learn_rate"])
+    weight_decay = float(gnn_config["weight_decay"])
+    opti_gnn = gnn_config["optimizer"]       #, "adam")
+    batch_size = int(gnn_config["batch_size"])
+    weighted = gnn_config["weighted"]
+    criterion = gnn_config["criterion"]
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # 
+    loaded_train = DataLoader(train_data, batch_size=batch_size, shuffle=False)
+    
+    data_sample = data = next(iter(loaded_train))
+    logger.info("Start building 'Simple Binary GCN'")
+    logger.info("X shape:\t%s", data_sample.x.shape)
+
+    in_dim = data_sample.x.shape[1]
+
+    model, settings = gnn.build_simple_binary_gnn(gnn_config, 
+                                                  in_dim)
+    model = model.to(device)
+
+    settings.update({
+            "n_epochs": n_epochs,
+            "learn_rate": learn_rate,
+            "weight_decay": weight_decay,
+            "optimizer": opti_gnn,
+            "batch_size": batch_size,
+            "device": str(device),
+            "weighted": weighted,
+            "criterion": criterion
+            })
+    
+    if opti_gnn == "adam":
+        optimizer = torch.optim.Adam(
+                    model.parameters(),
+                    lr=learn_rate,
+                    weight_decay=weight_decay
+                )
+    else:
+        raise ValueError("Missing or unknown value for 'optimizer':", opti_gnn)
+
+    model.train()
+    total_loss = 0.0
+    
+    crit_adapted = gnn.define_criterion(loaded_train, device, gnn_config)
+    logger.info("Criterion was defined")
+
+    logger.info("Start Training 'Simple Binary GCN'")
+
+    for i, data in enumerate(loaded_train):
+        if i/50 == 0:
+            logger.info("Processing timepoint '%s'", 
+                        i)
+        # logger.info("max edge index (%s):\t%s", 
+        #             i,
+        #             data.edge_index.max())
+
+        data = data.to(device)
+        optimizer.zero_grad()
+
+        logits = model(data.x, data.edge_index)
+
+        loss = crit_adapted(logits, data.y)
+
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+        # print(f"[DEBUG - {i}] loss | total_loss | total_loss (rel):")
+        # print(f"{loss:.4f} | {total_loss:.4f} | {total_loss/total_len:.4f}")
+
+    y_true, probs = gnn.collect_predictions(model, 
+                                            test_data, 
+                                            device)
+    results = {
+        "y_true": y_true,
+        "total_loss (abs)": total_loss,
+        "total_loss (rel)": total_loss / len(loaded_train),
+        "y_proba": probs,
+        }
+    
+    # now = session.now
+    # folder = os.getenv("PATH_EVALUATED")
+    # torch.save(results, f"{folder}/{now}_predictions.pt")
+
+    gnn.create_gnn_importance_df(model, 
+                                 test_data, 
+                                 feats, 
+                                 crit_adapted,
+                                 save=True)
+    # print("y mean:", np.mean(y_true_all))   # .mean()
+    # print("preds_50_gnn mean:", np.round(np.mean(preds_50_gnn), 3))
+    # print("preds_90_gnn mean:", np.round(np.mean(preds_90_gnn), 3))
+    # print("pred_base mean:", preds_base.float().mean())
+    
+    
+    return results, settings
+
+
+def predict_by_simple_bin_gcn(
+                        data,
+                        general_config,
+                        gnn_config, 
+                        preprocess: bool=False
+                        ):
+    # setup logger
+    # logger = session.logger
+
+    #
+    train_data = data["train"]
+    test_data = data["test"]
+    feats = data["feats"]
+
+    if preprocess:
+        train_data, test_data = gnn.preprocess_graph_data(
+                                                train_data,
+                                                test_data, 
+                                                general_config
+                                                )
+
+    # gnn_config = config.get("simple_bin_gcn", {})
+    results, meta = train_n_epoch(train_data, test_data, feats, gnn_config)
+    meta["time"] = now 
+    
+    # gnn_model, settings = build_logreg_model(config)
+    
+    return results, meta
 
 
 @click.command()
@@ -113,7 +247,7 @@ def run_train_basic_bin_gnn(name):
     data_list = torch.load(f"{feat_folder}/{build_time}_{data_name}.pt",
                            weights_only=False)   
     # split data
-    train_data, test_data, val_data = split.split_data(data_list, gnn_dict)
+    train_data, test_data, val_data = split.simple_time_split(data_list, gnn_dict)
     
     # X_train = train_data.drop(column=target_col)
     # y_train = train_data[target_col]
@@ -126,6 +260,7 @@ def run_train_basic_bin_gnn(name):
     results = train_n_epoch(
                         train_data,
                         test_data,
+                        feats, 
                         gnn_dict
                         )
 
@@ -165,8 +300,6 @@ def run_train_basic_bin_gnn(name):
     plt.hist(probs_gnn.detach().cpu().numpy(), bins=50)
     plt.title("Prediction Distribution")
     plt.show()
-
-    from sklearn.metrics import roc_auc_score, average_precision_score
 
     print("ROC-AUC:", roc_auc_score(y_true, probs_gnn))
     print("PR-AUC :", average_precision_score(y_true, probs_gnn))

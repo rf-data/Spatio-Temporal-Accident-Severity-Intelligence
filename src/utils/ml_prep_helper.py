@@ -7,6 +7,56 @@ import pandas as pd
 import src.utils.df_helper as dfh
 
 
+# def compute_smoothed_target_encoding(train_df, group_col, target_col, alpha=10):
+
+#     global_mean = train_df[target_col].mean()
+
+#     stats = (
+#         train_df
+#         .groupby(group_col)[target_col]
+#         .agg(["mean", "count"])
+#     )
+
+#     smooth = (
+#         (stats["count"] * stats["mean"] + alpha * global_mean)
+#         /
+#         (stats["count"] + alpha)
+#     )
+
+#     return smooth, global_mean
+
+
+def target_encode_col(train_df):
+    # setup logger
+    logger = session.logger
+
+    #
+    group_col = session.exp_params.get("encode_space", None)
+    target_col = session.exp_params.get("target_final", None)
+
+    mean_val = train_df.sort_values(group_col).groupby(group_col)[target_col].mean()
+
+    glob_mean = train_df[target_col].mean()
+
+    df_enc = train_df.drop(columns=[group_col]).copy()
+    df_enc[f"{group_col}_te"] = (
+        train_df[group_col].map(mean_val)
+        # .fillna(glob_mean)
+    )
+
+    logger.info(
+        "NaN count in '%s':\t%s",
+        f"{group_col}_te",
+        df_enc[f"{group_col}_te"].isna().sum(),
+    )
+
+    # encode_dict = {mean_val[i, 0]:mean_val[i, 1] for i in len(mean_val)}
+
+    # df_encoded = df.replace(encode_dict)
+
+    return df_enc
+
+
 def merge_df_ml_ready(general_args, col_dict, save_df=False):
     # (1) load config + parse arguments
     data_folder = general_args.get("data_folder", None)

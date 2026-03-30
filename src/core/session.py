@@ -19,7 +19,12 @@ class Session:
         self.venv = None
         self.url_repo = None
         self.backup_dir: str | Path | None = None
+        
         self.logger = None
+        self.now = None
+        self.df_name = None
+        self.save_folder = None
+        self.model_class = None
 
         # --- 'general' parameters ---
         self.gen_params: Dict[str, Any] | None = None
@@ -58,10 +63,10 @@ class Session:
     def load_config(self, config: Dict[str, Any]):
         """Load relevant configuration / settings into session."""
 
-        self.gen_params = config.get("general_parameters", None)
-        self.sql_params = config.get("sql_parameters", None)
-        self.exp_params = config.get("experiment_parameters", None)
-        self.prep_params = config.get("preparation_parameters", None)
+        # self.gen_params = config.get("general_parameters", None)
+        # self.sql_params = config.get("sql_parameters", None)
+        # self.exp_params = config.get("experiment_parameters", None)
+        # self.prep_params = config.get("preparation_parameters", None)
 
         # # --- 'general' properties ---
         # self.num_feats = config.get("num_feats", None)

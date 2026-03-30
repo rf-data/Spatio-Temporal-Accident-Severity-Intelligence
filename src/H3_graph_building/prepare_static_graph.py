@@ -10,6 +10,10 @@ from datetime import datetime
 import h3
 import torch
 from torch_geometric.data import Data
+#region agent log imports
+import json
+import time
+#endregion
 # print(torch.__version__)
 # print(torch.cuda.is_available())
 
@@ -20,10 +24,13 @@ from src.utils.file_helper import get_yaml_config
 # from src.core.gnn_classes import SimpleGNN
 import src.utils.ml_prep_helper as prep
 
+from src.core.session import session
+
 import src.utils.general_helper as gh
 import src.utils.file_helper as fh
 import src.utils.path_helper as ph
 import src.utils.df_helper as dfh
+
 
 # Approach:   Static Graph + temporal features
 """
@@ -45,15 +52,23 @@ uv pip install torch-geometric -f https://data.pyg.org/whl/torch-2.10.0+cpu.html
 """
 
 # Part A: node definition
-def build_node_index(df, config):
-    min_events = config.get("min_events", 2)        # per annum
-    h3_col = config.get("h3_col", "h3_res4")
-    target_col = config.get("target_col", "n_accidents")
+def build_node_index(df, config, gnn_config):
+     # , "n_accidents")
+    train_model = gnn_config.get("train_model", None)
+    h3_col = config["h3_col"]
 
+    print("head of df (build nodes):\n", df.head(3))
     # 1. Filter active cells
-    cell_activity = df.groupby(h3_col)[target_col].sum()
-    active_cells = cell_activity[cell_activity >= min_events].index.tolist()
-    # print("[DEBUG] total accidents (post_filter):\t", len(active_cells))
+    if train_model:
+        active_cells = df[h3_col].dropna().astype(str).unique().tolist()
+  
+    else:
+        min_events = config["min_events"]   # , "h3_res4")
+        target_col = config["target_col"]  
+        
+        cell_activity = df.groupby(h3_col)[target_col].sum()
+        active_cells = cell_activity[cell_activity >= min_events].index.tolist()
+        # print("[DEBUG] total accidents (post_filter):\t", len(active_cells))
     
     # 2. Create mapping
     h3_to_node = {h: i for i, h in enumerate(active_cells)}
@@ -63,13 +78,14 @@ def build_node_index(df, config):
 
 
 # Part B: edge construction
-def build_edge_index(h3_to_node, config):
-    k = config.get("neighbor_distance", 1)
-    include_self_loops = config.get("include_self_loops", True) 
+def build_edge_index(h3_to_node, gnn_config):
+    k = gnn_config["neighbor_distance"]     # , 1)
+    include_self_loops = gnn_config["include_self_loops"]       # , True) 
 
     edges = set()
-    for h3_cell, node_id in h3_to_node.items():
 
+    for h3_cell, node_id in h3_to_node.items():
+        
         # get neighbors (including h3_cell itself)
         neighbors = set(h3.grid_disk(h3_cell, k)) - {h3_cell}
 
@@ -97,8 +113,8 @@ def build_edge_index(h3_to_node, config):
 
    
 # Part C: snapshot building
-def create_snapshots(df, config, graph_data):
 
+def create_full_df(df, graph_data, config):
     h3_to_node = graph_data.get("h3_to_node", {})
     period_col = config.get("period_col", "time_bin")
     h3_col = config.get("h3_col", "h3_res4")
@@ -114,20 +130,34 @@ def create_snapshots(df, config, graph_data):
                                 all_times
                                 )
 
-    print("[DEBUG] df_full head:", df_full.head(3))
+    return df_full
+    
 
-    level = 1
-    target_old = config.get("target_col", "n_accidents")
+def create_snapshots(df_full,  
+                    config,
+                    graph_data):
+    # setup logger 
+    logger = session.logger 
+
+    # 
+    h3_to_node = graph_data["h3_to_node"]        # , {})
+    period_col = config["period_col"]       # , "time_bin")
+    h3_col = config["h3_col"]       # , "h3_res4")
+    target_col = config["target_col"]
+    
+    all_times = sorted(df_full[period_col].unique())
+
+    feature_cols = [col for col in df_full.columns 
+                    if col not in [target_col, 
+                                   period_col, 
+                                   h3_col]]
+
+    assert not df_full.duplicated([h3_col, period_col]).any()
+    assert df_full[h3_col].notna().all()
+    assert df_full[period_col].notna().all()
+    assert df_full.groupby([h3_col, period_col]).size().min() >= 1
 
     snapshots = []
-    target_columns = [target_old]
-    if level == 1:
-        target_col_lv1 = config.get("target_lvl_1", "has_accident")
-        target_columns.extend([target_col_lv1, "log_count"])
-        target_col = target_col_lv1
-
-    else: 
-        target_col = target_old
 
     for i in range(len(all_times) - 1):
         t = all_times[i]
@@ -139,28 +169,37 @@ def create_snapshots(df, config, graph_data):
         df_t["node_id"] = df_t[h3_col].map(h3_to_node)
         df_t1["node_id"] = df_t1[h3_col].map(h3_to_node)
 
-        df_t = df_t.sort_values("node_id")
-        df_t1 = df_t1.sort_values("node_id")
+        # df_t = df_t.sort_values("node_id")
+        # df_t1 = df_t1.sort_values("node_id")
 
-        if level == 1:
-            df_t[target_col] = (df_t[target_old] > 0).fillna(0).astype(int)
-            df_t1[target_col] = (df_t1[target_old] > 0).fillna(0).astype(int)
+        num_nodes = len(h3_to_node)
+        node_ids = np.arange(num_nodes)
 
-            df_t["log_count"] = np.log1p(df_t[target_old])
-            
-        # print("[DEBUG] df_t:\n", df_t.head(3))
+        df_t = df_t.set_index("node_id").reindex(node_ids)
+        df_t1 = df_t1.set_index("node_id").reindex(node_ids)
 
-        X = df_t[target_columns].values.astype("float32")
+        df_t[feature_cols] = df_t[feature_cols].fillna(0.0)
+        df_t1[target_col] = df_t1[target_col].fillna(0.0)
+
+        X = df_t[feature_cols].values.astype("float32")   
         y = df_t1[target_col].values.astype("float32")
 
+        assert df_t.index.max() == num_nodes - 1
+        assert df_t.shape[0] == num_nodes
+
         if np.isnan(X).sum() > 0:
-            print("NaNs in X:", np.isnan(X).sum())
+            logger.info("NaNs in X:\t%s", 
+                        np.isnan(X).sum())
         if np.isnan(y).sum() > 0:
-            print("NaNs in y:", np.isnan(y).sum())
+            logger.info("NaNs in y:\t%s", 
+                        np.isnan(y).sum())
 
         assert not np.isnan(X).any(), "NaNs in features!"
         assert not np.isnan(y).any(), "NaNs in target!"
 
+        # print(f"X shape ({i}):", X.shape)
+        # print(f"y shape ({i}):", y.shape)
+        # print(f"num_nodes ({i}):", num_nodes)
         # 
         snapshots.append({
             "time": t,
@@ -169,13 +208,59 @@ def create_snapshots(df, config, graph_data):
             "y": torch.tensor(y, dtype=torch.float32)
             })
     
-    print("[DEBUG] length 'snapshots':\t", len(snapshots))
-    print("[DEBUG] shape of first 5 'snapshots':")
+    logger.info("length 'snapshots':\t%s", 
+                len(snapshots))
+    logger.info("shape of first 5 'snapshots':")
     for info in snapshots[:5]:
-        print(f"[DEBUG] snap '{info["time"]}' shape X | y:\t{info["X"].shape} | {info["y"].shape}")
+        logger.info("snap '%s{}' shape X | y:\t%s | %s",
+        info["time"],
+        info["X"].shape,
+        info["y"].shape)
         
     return snapshots
 
+
+# build_node_index(df_agg, gnn_dict)
+def create_data_from_snapshots(
+                            snapshots, 
+                            edge_index,
+                            feat_folder,
+                            timestamp
+                            ):
+    # setup logger
+    logger = session.logger
+
+    # now = session.now
+
+    # if edge_index is None: 
+    #     if timestamp is not None:
+    #         edge_index = torch.load(f"{graph_folder}/{timestamp}_edge_index.pt")
+
+    #     else:
+    #         raise ValueError
+    # else:
+    #     h3_to_node, _ = build_node_index(df, gnn_settings)
+    #     edge_index = build_edge_index(h3_to_node, gnn_settings)
+    #     graph_data = {"h3_to_node": h3_to_node}
+
+    # snapshots = create_snapshots(df, target_col, gnn_settings, graph_data)
+    # torch.save(snapshots, f"{feat_folder}/{timestamp}_snapshots_base.pt")
+
+    data = []
+    for snap in snapshots:
+        data.append(
+            Data(
+                x=snap["X"],
+                edge_index=edge_index,
+                y=snap["y"]
+                )
+            )
+    data_path = f"{feat_folder}/{timestamp}_data_base.pt"
+    torch.save(data, data_path)
+    logger.info("Data lists as '%s'",
+                ph.shorten_path(data_path))
+
+    return data
 
 @click.command()
 @click.option("--name", prompt="Name of 'config_file' (no suffix)",
@@ -197,12 +282,12 @@ def run_prepare_static_graph(name):
     feat_folder = Path(f"{gnn_folder}/features")
 
     config = get_yaml_config(name)
-    general_args = config.get("general_args", {})
+    general_config = config.get("general_args", {})
     # data_folder = general_args.get("data_folder", None)
 
-    gnn_dict = config.get("gnn_settings", {})
-    h3_col = gnn_dict.get("h3_col", "h3_res4")
-    period_col = gnn_dict.get("period_col", "time_bin")
+    gnn_config = config.get("gnn_settings", {})
+    h3_col = gnn_config.get("h3_col", "h3_res4")
+    period_col = gnn_config.get("period_col", "time_bin")
     # target_col = gnn_dict.get("target_col", "n_accidents")
 
     # df_agg, now = prep.merge_df_ml_ready(general_args, 
@@ -226,8 +311,31 @@ def run_prepare_static_graph(name):
     assert not df_agg.duplicated([h3_col, period_col]).any(), \
     "Duplicate (h3, time_bin) found!"
 
+    graph_meta, edge_index = create_edges_indexes(df_agg, 
+                                                  general_config,
+                                                  gnn_config, 
+                                                  graph_folder, 
+                                                  now)
+    
+    df_full = create_full_df(df_agg, graph_meta, config)
+    
+    snapshots = create_snapshots(df_full, config, graph_meta)
+    torch.save(snapshots, f"{feat_folder}/{now}_snapshots_base.pt")
+
+    create_data_from_snapshots(snapshots, 
+                        edge_index,
+                        feat_folder,
+                        now)
+    
+
+    return 
+
+
+def create_edges_indexes(df, config, gnn_config, folder, timestamp):
     # Part A: build node_idx (incl. sanity checks)
-    h3_to_node, node_to_h3 = build_node_index(df_agg, gnn_dict)
+    h3_to_node, node_to_h3 = build_node_index(df, 
+                                              config,
+                                              gnn_config)
     total_nodes = len(h3_to_node)
     print("Total nodes:", total_nodes)
 
@@ -235,7 +343,12 @@ def run_prepare_static_graph(name):
     assert len(set(h3_to_node.values())) == len(h3_to_node)
 
     # Part B: build edge_idx (incl. sanity checks)
-    edge_index = build_edge_index(h3_to_node, gnn_dict)
+    sample_cells = list(h3_to_node.keys())[:5]
+    print(sample_cells)
+    print([type(x) for x in sample_cells])
+    assert all(isinstance(x, str) for x in sample_cells)
+
+    edge_index = build_edge_index(h3_to_node, gnn_config)
 
     num_edges = edge_index.shape[1]
     edges_per_node = num_edges / total_nodes
@@ -254,7 +367,7 @@ def run_prepare_static_graph(name):
     assert edge_index.max().item() < len(h3_to_node)
     assert edge_index.min().item() >= 0
         
-    torch.save(edge_index, f"{graph_folder}/{now}_edge_index.pt")
+    torch.save(edge_index, f"{folder}/{timestamp}_edge_index.pt")
         
     graph_meta = {
             "h3_to_node": h3_to_node,
@@ -267,32 +380,29 @@ def run_prepare_static_graph(name):
                 "Total_edges": num_edges,
                 "Edges_per_node": edges_per_node
                 },
-            "config": gnn_dict
+            "config": gnn_config
             }
-   
-    # fh.save_dict(graph_meta, f"{graph_folder}/{now}_graph_meta.json")
+    
+    fh.save_dict(graph_meta, f"{folder}/{timestamp}_graph_meta.json")
+
+    return graph_meta, edge_index
+
     # graph_path = "/home/robfra/0_Portfolio_Projekte/Road_accidents/GNN/graph/2026-03-20_13:34_graph_meta.json"
     # graph_meta = fh.load_dict(graph_path)
     # edge_index = torch.load(f"{graph_folder}/edge_index.pt")
     
-    snapshots = create_snapshots(df_agg, gnn_dict, graph_meta)
-    torch.save(snapshots, f"{feat_folder}/{now}_snapshots_base_v2.pt")
+    # level = 1
 
-    data = []
-    for snap in snapshots:
-        data.append(
-            Data(
-                x=snap["X"],
-                edge_index=edge_index,
-                y=snap["y"]
-                )
-            )
+    # if level == 1:
+    #     target_col = config.get("target_lvl_1", "has_accident")
+    #     df_agg["has_accident"] = (df_agg["n_accidents"] > 0).astype("int")
+    
+    # elif level == 2:
+    #     target_col = config.get("target_lvl_2", "n_accidents")
 
-    torch.save(data, f"{feat_folder}/{now}_data_base_v2.pt")
-
-    return 
-
-
+    # graph_meta["now"] = now
+    # graph_meta["save_folder"] = feat_folder
+    
     # full_index = pd.MultiIndex.from_product(
     #     [all_nodes, all_times],
     #     names=[h3_col, "time_bin"]

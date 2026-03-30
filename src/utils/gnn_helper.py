@@ -2,11 +2,15 @@
 # import
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
 
 from src.core.gnn_classes import SimpleBinaryGCN
-from torch_geometric.loader import DataLoader
+
+from src.core.session import session
+import src.utils.path_helper as ph
+import src.utils.visualisation_helper as viz
 
 
 def build_gnn(X, y, edge_index, config):
@@ -30,12 +34,23 @@ def build_gnn(X, y, edge_index, config):
 def build_simple_binary_gnn(config, in_dim):
 
     # in_dim = config.get("in_dim", 1)
-    hidden_dim = config.get("hidden_dim", 32)
-    drop_out = config.get("dropout", 0.2)
+    hidden_dim = config["hidden_dim"]   # , 32)
+    drop_out = config["dropout"]    # , 0.2)
     
     model = SimpleBinaryGCN(in_dim, hidden_dim, drop_out)
 
-    return model
+    setting = {
+            "model_class": model.__class__.__name__,
+            "architecture": str(model),
+            "hidden_dim": hidden_dim,
+            "in_dim": in_dim,
+            "drop_out": drop_out
+            }
+
+
+    setting["model_class"] = model.__class__.__name__
+    model = SimpleBinaryGCN(in_dim, hidden_dim, drop_out)
+    return model, setting
 
 
 def get_all_targets(data_list):
@@ -47,34 +62,53 @@ def get_all_targets(data_list):
     return torch.cat(y_all)
 
 
-def define_criterion(data_list, device, config):
-    crit = config.get("criterion", "bce_log_loss")
+def define_criterion(data_list, device, gnn_config):
+    # setup logger
+    logger = session.logger
 
-    y_all = get_all_targets(data_list)
-
-    print("y_all shape:", y_all.shape)
-    print("positive ratio:", y_all.mean().item())
-
-    pos = y_all.sum()
-    neg = len(y_all) - pos
-
-    pos_weight_value = neg / max(pos, 1)
-    pos_weight_ceil = min(pos_weight_value, 10)
-
-    pos_weight = torch.tensor(
-                        [pos_weight_ceil],
-                        dtype=torch.float32, 
-                        device=device)
-
-    print(f"pos: {pos}, neg: {neg}, pos_weight (raw | ceil): {pos_weight_value:.2f} | {pos_weight_ceil:.2f}")
+    # 
+    weighted = gnn_config["weighted"]
+    crit = gnn_config.get("criterion", "bce_log_loss")
 
     if crit == "bce_log_loss":
-        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-    
+        if weighted: 
+            logger.info("Setting 'bce_log_loss - weighted' as criterion")
+            y_all = get_all_targets(data_list)
+
+            logger.info("y_all shape:\t%s", 
+                        y_all.shape)
+            logger.info("positive ratio:\t%s", 
+                        y_all.mean().item())
+
+            pos = y_all.sum()
+            neg = len(y_all) - pos
+
+            pos_weight_value = neg / max(pos, 1)
+            pos_weight_ceil = min(pos_weight_value, 10)
+
+            pos_weight = torch.tensor(
+                                [pos_weight_ceil],
+                                dtype=torch.float32, 
+                                device=device)
+
+            logger.info("pos: %s, neg: %s, pos_weight (raw | ceil):\t%.2f | %.2f",
+                        pos,
+                        neg,
+                        pos_weight_value,
+                        pos_weight_ceil)
+
+            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+            
+        else: 
+            logger.info("Setting 'bce_log_loss - unweighted' as criterion")
+            criterion = nn.BCEWithLogitsLoss()
+        
         return criterion
 
-    return None
+    logger.error("No criterion set")
 
+    return None
+    
 
 def baseline_persistence(data_list):
     y_true_all = []
@@ -137,8 +171,112 @@ def baseline_prob_persistence(data_list):
     return torch.cat(y_true_all), torch.cat(probs_all)
 
 
+def get_gnn_feature_importance(model, data_list, criterion):
+    # setup logger
+    logger = session.logger 
+    logger.info("Start compiling 'feature importance' for test_data")
+
+    # 
+    model.eval()
+    importance = []
+
+    for i, data in enumerate(data_list):
+        # t_stamp = data.time
+        
+        data.x = data.x.clone().detach().requires_grad_(True)
+        model.zero_grad()
+
+        logits = model(data.x, data.edge_index)
+        # probs = torch.sigmoid(logits)
+        
+        loss = criterion(logits.squeeze(), data.y)
+        # loss = probs.mean() # probs[:, 0].mean()    
+
+        # if i < 5:
+        #     print(f"[DEBUG] shape of probs and value of loss:\t{probs.shape} | {loss:.4f}")
+         
+        
+        # model.zero_grad()
+        loss.backward()
+
+        data_importance = data.x.grad.abs().mean(dim=0)
+
+        importance.append(data_importance.detach().cpu().numpy())
+
+    importance = np.stack(importance)
+
+    return {
+        "all": importance,
+        "mean": importance.mean(axis=0),
+        "std": importance.std(axis=0)
+        }
+
+
+def create_gnn_importance_df(model, 
+                            data_list, 
+                            feats,
+                            criterion,
+                            save=True):
+    # setup logger
+    logger = session.logger
+    logger.info("Start creating Coef_df from GNN data")
+
+    # 
+    result = get_gnn_feature_importance(model, data_list, criterion)
+    mean_importance = result["mean"]
+    
+    assert len(feats) == len(mean_importance), \
+        f"Mismatch: feats={len(feats)}, importance={len(mean_importance)}"
+    
+    df = pd.DataFrame({
+        "feature": feats,
+        "importance": mean_importance,
+        "std": result["std"]
+    })
+
+    df["rank"] = df["importance"].rank(ascending=False)
+
+    if save:
+        df_path = ph.create_save_path("Coef_df", "coefs", "csv")
+        df.to_csv(df_path, index=False)
+        logger.info("Saved coef_df in ...%s", ph.shorten_path(df_path))
+
+    # if data_viz:
+    #     coef_hm_path = ph.create_save_path("plots", "coef_heat", "png")
+
+    #     viz.viz_odds_ratios(df, top_k=5, save_path=True)
+    #     viz.viz_odds_heatmap(df, save_path=coef_hm_path)
+
+    return df.sort_values("importance", ascending=False)
+
+
+def preprocess_graph_data(train_data, test_data, config):
+    # setup logger
+    logger = session.logger 
+    logger.info("Start preprocessing dataset")
+
+    num_cols = config["num_cols"] 
+
+    X_train = train_data.x
+    X_test = test_data.x
+
+    # scaling
+    scaler = StandardScaler()
+    X_train[num_cols] = torch.tensor(
+        scaler.fit_transform(X_train[num_cols].numpy()),
+        dtype=torch.float32
+    )
+
+    X_test[num_cols] = scaler.transform(X_test[num_cols])
+
+    return train_data, test_data
+
     
 def collect_predictions(model, data_list, device):
+    # setup logger
+    logger = session.logger 
+    logger.info("Start collecting predictions")
+
     model.eval()
 
     y_true_all = []
@@ -159,73 +297,3 @@ def collect_predictions(model, data_list, device):
 
     return y_true_all, probs_all
 
-
-def train_n_epoch(train_data, test_data, config):
-    
-    n_epoch = config.get("n_epochs", 1)
-    learn_rate = config.get("learn_rate", 1e-3)
-    weight_decay = config.get("weight_decay", 1e-4)
-    opti_gnn = config.get("optimizer", "adam")
-    batch_size = config.get("batch_size", 1)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    loader = DataLoader(train_data, batch_size=batch_size, shuffle=False)
-    
-    data_sample = data = next(iter(loader))
-    print("X shape:", data_sample.x.shape)
-    in_dim = data_sample.x.shape[1]
-
-    model = build_simple_binary_gnn(config, in_dim)
-    model = model.to(device)
-
-    if opti_gnn == "adam":
-        optimizer = torch.optim.Adam(
-                    model.parameters(),
-                    lr=float(learn_rate),
-                    weight_decay=float(weight_decay)
-                )
-    else:
-        ValueError("Missing or unknown value for 'optimizer':", opti_gnn)
-
-    model.train()
-    total_loss = 0.0
-    total_len = len(loader)
-
-    criterion = define_criterion(loader, device, config)
-    
-    for i, data in enumerate(loader):
-        # print(f"Processing {i} of {total_len}")
-
-        y_train = data.y
-        X_train = data.x
-
-        data = data.to(device)
-        optimizer.zero_grad()
-
-        logits = model(X_train, data.edge_index)
-
-        loss = criterion(logits, y_train)
-
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item()
-        # print(f"[DEBUG - {i}] loss | total_loss | total_loss (rel):")
-        # print(f"{loss:.4f} | {total_loss:.4f} | {total_loss/total_len:.4f}")
-
-    y_true, probs = collect_predictions(model, test_data, device)
-
-    # print("y mean:", np.mean(y_true_all))   # .mean()
-    # print("preds_50_gnn mean:", np.round(np.mean(preds_50_gnn), 3))
-    # print("preds_90_gnn mean:", np.round(np.mean(preds_90_gnn), 3))
-    # print("pred_base mean:", preds_base.float().mean())
-
-    return {
-        # "pred_base": baseline, 
-        "y_true": y_true,
-        "total_loss (abs)": total_loss,
-        "total_loss (rel)": total_loss / len(loader),
-        "probs": probs,
-        # "preds_50": torch.cat(preds_50_gnn),
-        # "preds_90": torch.cat(preds_90_gnn)
-        }

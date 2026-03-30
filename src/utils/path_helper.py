@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from typing import Union
 
+# from src.core.session import session
 
 def find_project_root() -> Path:
     start = Path(__file__).resolve()
@@ -28,19 +29,20 @@ def shorten_path(path, n=3):
     return "/".join(p[-n:])
 
 
-def create_save_path(folder_name, name_suffix, file_suffix):
+def create_save_path(name_suffix, file_suffix):     # folder_name, 
     # as lazy imports
-    import src.utils.general_helper as gh
+    # import src.utils.general_helper as gh
     from src.core.session import session
 
-    gh.load_env_vars()
-    folder = os.getenv("PATH_EVALUATED", None)
-    now = session.exp_params.get("now", None)
-    run_name = session.gen_params.get("log_file", None)
+    # gh.load_env_vars()
+    # folder = os.getenv("PATH_EVALUATED", None)
+    folder = session.save_folder
+    now = session.now   # ", None)
+    run_name = session.model_class # log_file", None)
 
     f_path = Path(
-        f"{folder}/{folder_name}/{now}_{run_name}_{name_suffix}.{file_suffix}"
-    )
+        f"{folder}/{now}_{run_name}_{name_suffix}.{file_suffix}"
+        )
     ensure_dir(f_path)
 
     return f_path

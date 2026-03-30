@@ -1,0 +1,129 @@
+##
+
+# ------------------------------
+# GENERAL
+# ------------------------------
+general_args:
+  name_log: stage_1 (forecast)
+  name_logfile: forecast
+  df_name: 2026-03-24_stage_1_complete
+  save_folder: ml_ready
+  # h3_col: h3_res4
+  # dt_col: datetime
+  h3_col: h3_res4
+  period_col: time_bin
+  target_col: has_accident
+  num_cols: [lag_1, lag_2, lag_4, lag_8,  
+            roll_mean_4, roll_mean_8, 
+            roll_sum_4, roll_sum_8,
+            roll_std_4, roll_std_8, 
+            zero_streak]
+  bin_cols: []
+  forecast_models: [log_reg, 
+                    light_gbm,
+                    xgboost,
+                    catboost,
+                    simple_bin_gcn]  # simple_bin_gcn
+  train_size: 0.7
+  validation: False
+  clip_values:
+    zero_streak: 10
+
+catboost:
+  iterations: 1000
+  learning_rate: 0.05
+  early_stop: 50
+  depth: 6
+  l2_leaf_reg: 3
+  loss_fn: Logloss
+  eval_metric: PRAUC
+  # has_time=has_time,                     # Verhindert Overfitting durch Zeitreihen-Struktur
+  random_state: 42
+  verbose: 100
+  auto_class_weights: Balanced
+
+xgboost:
+  n_estimators: 300
+  learning_rate: 0.05
+  max_depth: 6
+  min_child_weight: 1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  gamma: 0
+  reg_alpha: 0
+  reg_lambda: 1
+  objective: binary:logistic
+  eval_metric: logloss
+  random_state: 42
+  n_jobs: -1
+
+light_gbm:
+  n_estimators: 500
+  learning_rate: 0.05
+  max_depth: -1
+  num_leaves: 31 
+  n_jobs: -1
+  random_state: 42
+
+simple_bin_gcn:
+  train_model: True 
+  neighbor_distance: 1
+  include_self_loops: True
+  # in_dim: 1
+  hidden_dim: 32
+  dropout: 0.2
+  n_epochs: 1
+  optimizer: adam
+  learn_rate: 1e-3
+  weight_decay: 1e-4
+  weighted: True
+  criterion: bce_log_loss
+  batch_size: 1
+
+log_reg:
+  class_weight: balanced
+  C: 0.1
+  # penalty: l1
+  l1_ratio: 1.0
+  solver: liblinear
+  random_state: 42
+  max_iter: 1000
+  
+# charac:
+#   summary_file_name: charac_EDA_summary_v1_2026-03-09_11:33
+#   data_folder: Eigenschaften_characteristics
+#   suffix_dict:  # ex ante
+#     h3: [ID_accident, h3_res4]
+#     time: [ID_accident, datetime, month, weekday]   # , 
+#     # harmonized: [ID_accident, weather_type, collision_type",
+#     #             interception_type, light_condition]
+#   suffix_df: stage_1
+#   necessary_cols: [
+#                   ID_accident, 
+#                   h3_res4,
+#                   datetime, month, weekday, 
+#                   # weather_type, collision_type,
+#                   # interception_type, light_condition
+#                   ]
+#   # new_file_suffix: "ml_ready"
+#   min_events: 2
+#   # to_add: [""]
+#   h3_col: h3_res4
+#   dt_col: datetime
+#   period_col: time_bin
+#   period: weekly
+#   merge_col: ID_accident
+#   target_prelim: n_accidents
+#   target_col: has_accident
+#   cyclic_encoding: False
+#   time_features:
+#     lag: [1, 2, 4, 8]   # 12, 26, 52
+#     rolling_values: [4, 8]     # 12
+#     rolling_stats: [mean, sum, std]
+
+
+#   # suffix_all: "ml_ready_v3"
+#   # file_suffix: ["h3", "time"]
+#   # h3_folder: h3_resolutions
+#   # summary_file_name: 
+#   # years: ["2009"]

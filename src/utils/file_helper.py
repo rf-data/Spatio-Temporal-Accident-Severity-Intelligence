@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import inspect
+import torch
 import joblib
 import numpy as np
 from datetime import datetime
@@ -138,7 +139,10 @@ def make_json_safe(obj):
         return str(obj)
     if inspect.isfunction(obj):
         return gh.snapshot_single_function(obj)
-
+    # if isinstance(obj, torch.Tensor):           # Tensor handling
+    #     return obj.detach().cpu().numpy().tolist()
+    # if isinstance(obj, torch.device):
+        # return str(obj)
     return obj
 
 
@@ -158,8 +162,8 @@ def save_dict(data: dict, path: Path) -> None:
             )
             print(f"Dict saved as {ph.shorten_path(path, 3)}")
             
-        except TypeError:
-            print("NON-SERIALIZABLE:", type(data_new), repr(data_new))
+        except TypeError as e:
+            print(f"ERROR (non_serializable):\n{e}\n", type(data_new), repr(data_new))
 
 
 def append_json(data: dict, path: Path) -> None:

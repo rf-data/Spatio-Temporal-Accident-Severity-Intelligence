@@ -3,14 +3,15 @@
 import numpy as np
 import pandas as pd
 
+from src.core.session import session
 
 
 def get_datetime_limits(df, config): 
     
-    dt_col = config.get("time_col_new", "datetime")
+    dt_col = config["dt_col"]       # , "datetime")
 
     # print(f"Describe column '{col}':\n", df[col].describe())
-
+    
     dt = df[dt_col].dropna()
 
     min_year = dt.dt.year.min()
@@ -90,8 +91,7 @@ def create_n_weekly(df, time_col, n_weeks=2):
 
 def cyclic_encode_col(df_in, encode_cols):
     # setup logger
-    # if session:
-    #     logger = session.logger
+    logger = session.logger
 
     # feats = session.exp_params.get("features", None)
     df = df_in.copy()
@@ -119,18 +119,15 @@ def cyclic_encode_col(df_in, encode_cols):
         df[f"{period}_sin"] = np.sin(2 * np.pi * df[period] / period_int)
         df[f"{period}_cos"] = np.cos(2 * np.pi * df[period] / period_int)
 
-        # if logger:
-        #     logger.info(
-        #         "Added encoded time columns (['%s', '%s']) to df.",
-        #         f"{period}_sin",
-        #         f"{period}_cos",
-        #         )
-        # else:
-        print(f"Added encoded time columns (['{period}_sin', '{period}_cos']) to df.")
-            # col_to_drop.append(period)
-
+        logger.info(
+                "Added encoded time columns (['%s', '%s']) to df.",
+                f"{period}_sin",
+                f"{period}_cos",
+                )
+        
     if len(invalid_period) > 0:
-        print("Following 'periods' could not be encoded:", invalid_period)
+        logger.info("Following 'periods' could not be encoded:\t%s", 
+                    invalid_period)
     # df_new = df.drop(columns=col_to_drop)
 
     return df
@@ -220,6 +217,8 @@ def create_timestamp_col(df_in, config):
 
 
 def extract_col_from_datetime(df, dt_col, cols):
+    # get logger
+    logger = session.logger
 
     ts = df[dt_col]
 
