@@ -1,0 +1,34 @@
+## yaml-file "Places" dataset
+# ------------------------------
+# GENERAL
+# ------------------------------
+general_args:
+  summary_name: persons
+  summary_file_name: persons_EDA_summary_v1_2026-03-10_11:50
+  data_folder: Benutzer_usagers
+  schema_name: clean
+  table_name: persons
+  name_log: EDA + Cleaning (persons)
+  name_logfile: eda_clean_persons
+
+# ----------------------------------
+# FEATURE ENGINEERING
+# ----------------------------------
+
+# eda_cleaning_persons
+columns:
+  # numeric: [ID_accident, birth_year, ID_vehicle,
+  #           ID_person]
+  # categorical: [seat_position, person_type, injury_severity
+  #               sex, trip_purpose, safety_equipment,
+  #               pedest_location, pedest_action, pedest_alone,
+  #               safety_equip_1, safety_equip_2, safety_equip_3]
+  to_drop: [sex, trip_purpose, pedest_location,
+            pedest_action, pedest_alone,
+            intra_acc_ID, ID_vehicle]
+  
+
+# ----------------------------------
+# FEATURE SELECTION
+# ----------------------------------
+

@@ -64,6 +64,7 @@ geo_processing:
 # ----------------------------------
 # FEATURE ENGINEERING / SQL_UPLOAD
 # ----------------------------------
+# --> clean_from_json
 
 columns:
   dt_col: []

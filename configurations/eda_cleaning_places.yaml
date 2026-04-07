@@ -1,0 +1,123 @@
+## yaml-file "Places" dataset
+# ------------------------------
+# GENERAL
+# ------------------------------
+general_args:
+  summary_name: places
+  summary_file_name: places_EDA_summary_v1_2026-03-10_11:43
+  data_folder: Orte_lieux
+  schema_name: clean
+  table_name: places
+  name_log: EDA + Cleaning (places)
+  name_logfile: eda_clean_places
+
+dataset:
+  topic: road accidents
+  name: places 
+
+  structure:
+    table: True
+    image: False
+    video: False
+    time_series: True
+    geo_data: True
+    cross_file: True
+
+  # properties:
+  #   temporal_granularity: day
+  #   spatial_granularity: gps_point
+
+  expectations:
+    expected_primary_key: Num_Acc
+    # expected_row_growth: yearly_append
+    # expected_stationarity: False
+  
+  merge_behavior:
+    default: append
+    # allowed_keys:
+    #   - Num_Acc
+
+llm:
+  model: "gpt-4.1-mini"
+  temperature: 0.2
+
+agent:
+  version: 1
+  max_iterations: 2
+  reflexive: True
+
+# ------------------------------
+# EDA
+# ------------------------------
+tool_args:
+  missing_analysis: 
+    threshold: 0.5
+
+  infinite_analysis:
+    params:
+      strategy: drop
+
+  duplicate_analysis:
+    threshold: 0.01
+    grouping: []
+    params:
+      subset: []
+      keep: first
+
+  numeric_summary:
+    percentiles: [0.01, 0.05, 0.1, 0.25, 0.75, 0.9, 0.95, 0.99]
+      
+  categorical_summary:
+    top_n: 10
+    threshold: 50 
+      
+  zero_inflation_analysis:
+    threshold: 0.8
+
+# ----------------------------------
+# DATA CLEANING / SQL_UPLOAD
+# ----------------------------------
+# --> harmonize_schema + clean_from_json
+
+columns:
+  numeric: [ID_accident, n_lanes, median_width, road_with]
+  categorical: [infrastructure, speed_limit, traffic_regime,
+                road_gradient, road_number, road_type,
+                reserved_lane, road_geometry, surface_condition]
+  to_drop: [v1, v2, pr, pr1]
+  rename: 
+    infra: infrastructure
+    vma:  speed_limit     # ggf redudant mit road_type
+    circ: traffic_regime    # quo vadis?
+    prof: road_gradient   # quo vadis? 
+    voie: road_number   # df["is_highway"] = df["voie"].str.startswith("A")
+    Num_Acc: ID_accident
+    catr: road_type
+    nbv: n_lanes        # df["is_multilane"] = df["nbv"] > 2
+    vosp: reserved_lane   # quo vadis?; relevance in urban settings 
+    plan: road_geometry
+    lartpc: median_width    # quo vadis?
+    larrout: road_width     # quo vadis?
+    surf: surface_condition # 
+       # #
+    situ: accident_location   #  
+    env1: near_school       # quo vadis?; relevance in urban settings 
+
+# df["risk_speed_curve"] = (
+#     (df["vma"] >= 80) &
+#     (df["plan"].isin([2,3,4]))
+# )
+# df["is_high_speed"] = df["vma"] >= 90
+# df["is_urban_speed"] = df["vma"] <= 50
+# df["is_curve"] = df["plan"].isin([2,3,4])
+# df["is_slippery"] = df["surf"].isin([2,3,4,5,6,7,8])
+# df["is_urban"] = df["catr"].isin([4,7])
+# df["is_complex_infra"] = df["infra"].isin([3,5])
+
+# df["high_risk_road"] = (
+#     (df["is_curve"]) &
+#     (df["is_slippery"]) &
+#     (df["nbv"] <= 2)
+# )
+
+      

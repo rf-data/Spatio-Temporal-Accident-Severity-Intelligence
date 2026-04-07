@@ -1,24 +1,86 @@
 
 # imports 
 from pydantic import BaseModel
-from typing import Callable, Dict, List
-from sklearn.linear_model import LogisticRegression
-from catboost import CatBoostClassifier
-from xgboost import XGBClassifier
-from lightgbm import LGBMClassifier
+from typing import Callable, Dict, List, Literal, Any, Optional
 
+from enum import Enum
 
 # -----------------
 # Model Registry 
 # -----------------
 
+class BaseModelAdapter:
+    def __init__(self):
+        self.logger = session.logger
+        
+
+    def build(self, model_name, model_config): 
+        some_dict = {}
+        some_build_fn = some_dict[model_name]
+        return some_build_fn(**model_config)
+    
+    def train(self, model, X_train, y_train): 
+        
+        return model.train(X_train, y_train)
+    
+    def predict(self, model, X_test): 
+        
+        return model.predict(X_test)
+    
+    def predict_proba(self, model, X_test):
+        if hasattr(model, "predict_proba"):
+            # y_proba = model.predict_proba(X_test)[:, 1]
+            return model.predict_proba(X_test)
+        
+        return None
+
+# class XGBoostAdapter(BaseModelAdapter): ...
+# class TorchAdapter(BaseModelAdapter): ...
+
+class TaskType(str, Enum):
+    BINARY = "binary"
+    MULTI_CLASS = "multi_class"
+    MULTI_LABEL = "multi_label"
+    REGRESSION = "regression"
+
+
 class ModelMeta(BaseModel):
     name: str
     framework: str
-    function: Callable
-    supervised: bool
-    classification: List[str]       # binary, multi_class, multi_label
-    regression: bool
+
+    # core
+    learning_type: Literal["supervised", "unsupervised", "semi_supervised"]
+    task_type: List[TaskType]
+
+    # data compatibility
+    input_type: List[str]   # tabular, image, text, graph, time_series
+    output_type: str        # probability, class_label, embedding
+
+    # adapter
+    adapter: BaseModelAdapter
+    # train_fn: Callable
+    # predict_fn: Callable
+    # predict_proba_fn: Optional[Callable] = None
+
+    # capabilities
+    tags: List[str] = []
+
+    # requirements
+    requires_gpu: bool = False
+    supports_sparse: bool = False
+    handles_missing: bool = True
+
+    # evaluation
+    supported_metrics: List[str] = []
+
+    # config
+    default_params: Dict[str, Any] = {}
+    search_space: Dict[str, Any] = {}
+
+    # explainability
+    explainable: bool = False
+    explain_methods: List[str] = []  # shap, lime, grad_cam
+
 
 class ModelRegistry:
     def __init__(self):
@@ -27,54 +89,50 @@ class ModelRegistry:
     def register(self, 
                  name: str,
                 framework: str,
-                function: Callable,
-                supervised: bool,
-                classification: str | List[str],       # binary, multi_class, multi_label
-                regression: bool
+                learning_type: str,
+                task_type: TaskType | List[TaskType],
+                input_type: List[str],
+                output_type: str, 
+                adapter: BaseModelAdapter, 
+                # train_fn: Callable,
+                # predict_fn: Callable,
+                # predict_proba_fn: Optional[Callable]=None,
+                tags: List[str]=[], 
+                requires_gpu: bool = False,
+                supports_sparse: bool = False,
+                handles_missing: bool = True,
+                supported_metrics: List[str] = [], 
+                default_params: Dict[str, Any] = {},
+                search_space: Dict[str, Any] = {},
+                explainable: bool = False,
+                explain_methods: List[str] = []
                  ):
         if name in self._models:
             print("""
                 [INFO] Model '{name}' already registered. 
                   Skip and continue with next model.
                   """)
-            
+
         self._models[name] = ModelMeta(
                                 name=name,
-                                framework: str,
-                                function: Callable,
-                                supervised: bool,
-                                classification: str | List[str],       # binary, multi_class, multi_label
-                                regression: bool
+                                framework=framework,
+                                learning_type=learning_type,
+                                task_type=task_type,
+                                input_type=input_type,
+                                output_type=output_type,
+                                adpater=adapter,
+                                tags=tags,
+                                requires_gpu=requires_gpu,
+                                supports_sparse=supports_sparse,
+                                handles_missing=handles_missing,
+                                supported_metrics=supported_metrics, 
+                                default_params=default_params,
+                                search_space=search_space,
+                                explainable=explainable,
+                                explain_methods=explain_methods
                                     )
+        return 
 
-    def get_fn(self, name: str) -> Callable:
-        meta = self._models[name]
-        return meta.function
-
-    def get_model_by_keywords(
-                            self, 
-                            keywords: str | List[str]
-                            ) -> List[str]:
-
-        models = []
-
-        for meta in self.list():
-
-            if meta.category != category:
-                continue
-
-            if default_only and not meta.default:
-                continue
-
-            if eda_only and not meta.eda:
-                continue
-
-            if cross_file and meta.cross_file != cross_file:
-                continue
-
-            models.append(meta.name)
-
-        return models
 
     def list(self, meta_only=True):
 
@@ -82,7 +140,50 @@ class ModelRegistry:
             return list(self._models.values())
         
         return self._models
+    
+
+    def get_fn_by_name(self, name: str, fn_type: Literal["train", "predict", "predict_proba"]="train") -> Callable:
         
+        meta = self._models[name]
+        
+        if fn_type == "train":
+            func = meta.train_fn
+        elif fn_type == "predict":
+            func = meta.predict_fn
+        elif fn_type == "predict_proba":
+            func = meta.predict_proba_fn
+        else: 
+            raise ValueError(f"Invalid input for 'fn_type': {fn_type}")
+        
+        return func
+
+
+    # def 
+
+    # def get_model_by_keywords(
+    #                         self, 
+    #                         supervised=None,
+    #                         classification=None,       # binary, multi_class, multi_label
+    #                         regression=None
+    #                         ) -> List[str]:
+
+    #     models = []
+
+    #     for meta in self.list():
+
+    #         if meta.supervised != supervised:
+    #             continue
+
+    #         if classification and not meta.classification:
+    #             continue
+
+    #         if regression and not meta.regression:
+    #             continue
+
+    #         models.append(meta.name)
+
+    #     return models
+    
 
     # def export_for_llm(self):
     #     return [
@@ -96,118 +197,5 @@ class ModelRegistry:
     #         for meta in self._checks.values()
     #     ]
 
-model_registry = ModelRegistry()
+# model_registry = ModelRegistry()
 
-
-# -----------------
-# ML functions
-# -----------------
-
-def build_logreg_model(lr_config, pos_weight=None):
-
-    class_weight = lr_config["class_weight"]   # , None)
-    l1_ratio = float(lr_config["l1_ratio"])    # , 0.0)
-    solver = lr_config["solver"]   # , "lbfgs")
-    random_state = int(lr_config["random_state"])   # , 42)
-    max_iter = int(lr_config["max_iter"])   # , 1000)
-    param_C = float(lr_config["C"])     # , None)
-
-    lr_model = LogisticRegression(
-        max_iter=max_iter,
-        l1_ratio=l1_ratio,
-        C=param_C,
-        # penalty=penalty,
-        class_weight=class_weight,
-        random_state=random_state,
-        solver=solver,
-    )
-
-    return lr_model
-
-# ----------------------------------------
-# 'BOOSTED' TREE MODELS (CLASSIFICATION)
-# ----------------------------------------
-
-def build_catboost_model(cat_config, pos_weight=None):
-
-    iterations = int(cat_config["iterations"])  
-    learning_rate = float(cat_config["learning_rate"]) 
-    early_stop = int(cat_config["early_stop"]) 
-    depth = int(cat_config["depth"])  
-    l2_leaf_reg = int(cat_config["l2_leaf_reg"])
-    loss_fn = cat_config["loss_fn"]
-    auto_class_weights = cat_config["auto_class_weights"]
-    eval_metric = cat_config["eval_metric"]
-    random_state = int(cat_config["random_state"])
-    verbose = int(cat_config["verbose"])
-
-    cat_model = CatBoostClassifier(
-        iterations=iterations,
-        learning_rate=learning_rate,
-        early_stopping_rounds=early_stop,
-        depth=depth,
-        l2_leaf_reg=l2_leaf_reg,
-        loss_function=loss_fn,
-        auto_class_weights=auto_class_weights,
-        eval_metric=eval_metric,random_seed=random_state,
-        verbose=verbose
-    )
-
-    return cat_model
-
-
-def build_xgboost_model(xgb_config, pos_weight=None):
-
-    n_estimators = int(xgb_config["n_estimators"])   # , None)
-    learning_rate = float(xgb_config["learning_rate"])    # , 0.0)
-    max_depth = int(xgb_config["max_depth"])   # , "lbfgs")
-    min_child_weight = int(xgb_config["min_child_weight"])
-    subsample = float(xgb_config["learning_rate"])
-    colsample_bytree = float(xgb_config["colsample_bytree"])
-    gamma = float(xgb_config["gamma"])
-    reg_alpha = float(xgb_config["reg_alpha"])
-    reg_lambda = float(xgb_config["reg_lambda"])
-    objective = xgb_config["objective"]
-    eval_metric = xgb_config["eval_metric"]
-    n_jobs = int(xgb_config["n_jobs"])     # , None)
-    random_state = int(xgb_config["random_state"])
-
-    xgb_model = XGBClassifier(
-                n_estimators=n_estimators,
-                learning_rate=learning_rate,
-                max_depth=max_depth,
-                min_child_weight=min_child_weight,
-                subsample=subsample,
-                colsample_bytree=colsample_bytree,
-                gamma=gamma,
-                reg_alpha=reg_alpha,
-                reg_lambda=reg_lambda,
-                objective=objective,
-                eval_metric=eval_metric,
-                random_state=random_state,
-                n_jobs=n_jobs
-                )
-
-    return xgb_model
-
-
-def build_light_gbm_model(light_config, pos_weight):
-
-    n_estimators = int(light_config["n_estimators"])   # , None)
-    learning_rate = float(light_config["learning_rate"])    # , 0.0)
-    max_depth = int(light_config["max_depth"])   # , "lbfgs")
-    num_leaves = int(light_config["num_leaves"])   # , 42)
-    n_jobs = int(light_config["n_jobs"])     # , None)
-    random_state = light_config["random_state"]
-
-    light_model = LGBMClassifier(
-                    n_estimators=n_estimators,
-                    learning_rate=learning_rate,
-                    max_depth=max_depth,
-                    num_leaves=num_leaves,
-                    scale_pos_weight=pos_weight, 
-                    n_jobs=n_jobs,
-                    random_state=random_state
-                    )
-
-    return light_model

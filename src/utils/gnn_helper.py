@@ -6,51 +6,11 @@ from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
 
-from src.core.gnn_classes import SimpleBinaryGCN
+# from src.core.models_gnn import SimpleBinaryGCN
 
 from src.core.session import session
 import src.utils.path_helper as ph
-import src.utils.visualisation_helper as viz
-
-
-def build_gnn(X, y, edge_index, config):
-
-    in_dim = config
-    hidden_dim = config
-    drop_out = config
-    
-    X = torch.tensor(X, dtype=torch.float)
-    y = torch.tensor(y, dtype=torch.float)
-
-    model = SimpleBinaryGCN(in_dim, hidden_dim, drop_out)
-
-    out = model(X, edge_index)
-
-    print(out.shape)  # (831,)
-
-    return out
-
-
-def build_simple_binary_gnn(config, in_dim):
-
-    # in_dim = config.get("in_dim", 1)
-    hidden_dim = config["hidden_dim"]   # , 32)
-    drop_out = config["dropout"]    # , 0.2)
-    
-    model = SimpleBinaryGCN(in_dim, hidden_dim, drop_out)
-
-    setting = {
-            "model_class": model.__class__.__name__,
-            "architecture": str(model),
-            "hidden_dim": hidden_dim,
-            "in_dim": in_dim,
-            "drop_out": drop_out
-            }
-
-
-    setting["model_class"] = model.__class__.__name__
-    model = SimpleBinaryGCN(in_dim, hidden_dim, drop_out)
-    return model, setting
+# import src.utils.visualisation_helper as viz
 
 
 def get_all_targets(data_list):
@@ -237,7 +197,7 @@ def create_gnn_importance_df(model,
     df["rank"] = df["importance"].rank(ascending=False)
 
     if save:
-        df_path = ph.create_save_path("Coef_df", "coefs", "csv")
+        df_path = ph.create_save_path("coefs", "csv")
         df.to_csv(df_path, index=False)
         logger.info("Saved coef_df in ...%s", ph.shorten_path(df_path))
 
@@ -272,28 +232,3 @@ def preprocess_graph_data(train_data, test_data, config):
     return train_data, test_data
 
     
-def collect_predictions(model, data_list, device):
-    # setup logger
-    logger = session.logger 
-    logger.info("Start collecting predictions")
-
-    model.eval()
-
-    y_true_all = []
-    probs_all = []    
-
-    with torch.no_grad():
-        for data in data_list:
-            data = data.to(device)
-
-            logits = model(data.x, data.edge_index)
-            probs = torch.sigmoid(logits)
-
-            y_true_all.append(data.y.cpu())
-            probs_all.append(probs.cpu())
-
-    y_true_all = torch.cat(y_true_all)
-    probs_all = torch.cat(probs_all)
-
-    return y_true_all, probs_all
-

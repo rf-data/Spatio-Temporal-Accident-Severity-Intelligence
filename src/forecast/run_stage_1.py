@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from datetime import datetime
 # from sklearn.linear_model import LogisticRegression
+from sklearn.compose import ColumnTransformer
 # from sklearn.pipeline import Pipeline
 import numpy as np
 import pandas as pd
@@ -25,7 +26,7 @@ from src.H3_graph_building.prepare_static_graph import (create_edges_indexes,
                                                         create_snapshots, 
                                                         create_data_from_snapshots)
 from src.forecast.predict_by_ml_model import predict_by_ml_model, prepare_ml_data
-# from src.forecast.predict_by_gcn import predict_by_simple_bin_gcn
+from src.forecast.predict_by_gcn import predict_by_simple_bin_gcn
 # from src.forecast.predict_by_light_gbm import predict_by_light_gbm
 # from Road_accidents.src.forecast.predict_by_ml_model import predict_by_xgboost
 # from src.forecast.predict_by_catboost import predict_by_catboost
@@ -50,7 +51,7 @@ def run_stage_1_prediction(config_name):
     # load env variables
     gh.load_env_vars()
     data_processed = os.getenv("PATH_PROCESSED")
-    # report= os.getenv("FOLDER_REPORT")
+    report= os.getenv("FOLDER_REPORT")
 
     # load values from config
     config = get_yaml_config(config_name)
@@ -78,7 +79,7 @@ def run_stage_1_prediction(config_name):
 
     # store importance objects/values in session 
     eval_folder = os.getenv("PATH_EVALUATED")
-    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    now = "2026-03-27_14-55-26"      # datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     session.logger = logger
     session.df_name = df_name
@@ -102,10 +103,10 @@ def run_stage_1_prediction(config_name):
     # -------------------
     # 'SIMPLE' ML MODELS 
     # -------------------
-    if "log_reg" in forecast_models:
+    if "LogisticRegression" in forecast_models:
 
-        # session.run_name = "log_reg"
-
+        # session.run_name = "log_reg" 
+                    
         model_pipe = predict_by_ml_model(
                         split_data, 
                         "log_reg",
@@ -119,7 +120,7 @@ def run_stage_1_prediction(config_name):
     # 'BOOSTED' TREE MODELS 
     # ----------------------
     # Gradient Boosting (XGBoost, LightGBM, CatBoost) --> tsfresh
-    if "light_gbm" in forecast_models:
+    if "LGBMClassifier" in forecast_models:
 
         # session.run_name = "light_gbm"
 
@@ -132,8 +133,7 @@ def run_stage_1_prediction(config_name):
 
         eval.create_tree_importance_df(model_pipe, save=True)
 
-
-    if "xgboost" in forecast_models:
+    if "XGBClassifier" in forecast_models:
 
         # session.run_name = "xgboost"
 
@@ -145,9 +145,8 @@ def run_stage_1_prediction(config_name):
                                     )
         
         eval.create_tree_importance_df(model_pipe, save=True)
-       
 
-    if "catboost" in forecast_models:
+    if "CatBoostClassifier" in forecast_models:
 
         # session.run_name = "cat_boost"
 
@@ -173,7 +172,7 @@ def run_stage_1_prediction(config_name):
     # used_gnn = False
     # gnn_timestamp = None
 
-    if "simple_bin_gcn" in forecast_models:
+    if "SimpleBinaryGCN" in forecast_models:
 
         gnn_folder = os.getenv("FOLDER_GNN")
         graph_folder = Path(f"{gnn_folder}/graph")
@@ -226,27 +225,29 @@ def run_stage_1_prediction(config_name):
         is_preprocess = (isinstance(preprocessor, ColumnTransformer) & 
                          len(preprocessor.transformers) > 0)
         
-        weighted = gnn_config["weighted"]
-        gcn_results, gcn_meta = predict_by_simple_bin_gcn(
-                                            data,
-                                            general_config, 
-                                            gnn_config,
-                                            preprocess=is_preprocess)
+        weighted = gcn_config["weighted"]
+        # gcn_results, gcn_meta = 
+        predict_by_simple_bin_gcn(
+                            data,
+                            general_config, 
+                            gcn_config,
+                            preprocess=is_preprocess
+                            )
 
-        gcn_results["file"] = df_name
+        # gcn_results["file"] = df_name
         # results.append({"simple_bin_gcn": gcn_results})
         
-        now = session.now
-        weight_suf = "weighted" if weighted else "unweighted"
-        results_path = f"{report}/{now}_gcn_{weight_suf}_results.pt"
-        meta_path = f"{report}/{now}_gcn_{weight_suf}_meta.json"
+        # now = session.now
+        # weight_suf = "weighted" if weighted else "unweighted"
+        # results_path = f"{report}/{now}_gcn_{weight_suf}_results.pt"
+        # meta_path = f"{report}/{now}_gcn_{weight_suf}_meta.json"
 
-        torch.save(gcn_results, results_path)
-        fh.save_dict(gcn_meta, meta_path)
+        # torch.save(gcn_results, results_path)
+        # fh.save_dict(gcn_meta, meta_path)
         # 
-        used_gnn = True
-        if gnn_timestamp is None:
-            gnn_timestamp = now 
+        # used_gnn = True
+        # if gnn_timestamp is None:
+        #     gnn_timestamp = now 
 
     
     # -----------------

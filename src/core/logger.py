@@ -385,6 +385,8 @@ class ModelLogger:
         add_idx: str | List[str]=None,
         extra_params=None
     ):
+        framework = self._detect_framework(model)
+        
         model_class = model.__class__.__name__
         session.model_class = model_class
 
@@ -402,7 +404,8 @@ class ModelLogger:
                                         y_pred, 
                                         y_proba,
                                         y_val_pred,
-                                        y_val_proba
+                                        y_val_proba, 
+                                        framework
                                         )
         
         if add_idx:
@@ -424,7 +427,7 @@ class ModelLogger:
         # ===== Metadata =====
         metadata = {
             "model_class": model_class,
-            "framework": self._detect_framework(model),
+            "framework": framework,
             "params": self._extract_params(model),
             "metrics": metrics or {},
             "n_samples": len(y_test),
@@ -451,7 +454,8 @@ class ModelLogger:
                              y_pred, 
                              y_proba,
                              y_val_pred,
-                            y_val_proba
+                            y_val_proba,
+                            framework
                             ):
         
         df = pd.DataFrame({
@@ -469,7 +473,7 @@ class ModelLogger:
             df["y_val_proba"] = y_val_proba
 
         # save index 
-        if hasattr(X_test, "index"):
+        if hasattr(X_test, "index") and (framework != "pytorch"):
             df["index"] = X_test.index
         
         return df

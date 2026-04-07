@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import click
 
+import src.utils.df_helper as dfh
 import src.utils.file_helper as fh
 import src.utils.general_helper as gh
 import src.utils.path_helper as ph
@@ -13,6 +14,8 @@ import src.utils.agent_helper as ah
 
 from src.agentic_AI.report.raw_data_report import load_eda_summary
 
+from src.core.session import session
+from src.core.logger import create_logger
 
 def extract_geo_cols(report):
 
@@ -90,12 +93,20 @@ def run_harmonize_schema(name):
 
     config = fh.get_yaml_config(name)
     
-    data_folder = Path(config.get("general_args", {}).get("data_folder", {}))
+    general_config = config.get("general_args", {})
+    log_name = general_config["name_log"]
+    name_logfile = general_config["name_logfile"]
+    start_year = general_config.get("start_year", 1900)
+    data_folder = Path(general_config["data_folder"])
     df_path = Path(f"{data_raw}/{data_folder}")
+
+    # setup logger 
+    logger = create_logger(name=log_name, file_name=name_logfile)
+    session.logger = logger
 
     # args = ah.parse_args()
     # load report
-    report_dict = load_eda_summary(config)
+    report_dict = load_eda_summary(general_config)
     report = report_dict["report"]
     files = report_dict["files"]
 
@@ -117,25 +128,33 @@ def run_harmonize_schema(name):
     # ------------------------------
     # COLLECT UNION SCHEMA
     # ------------------------------
-    rename_dict = config.get("columns", {}).get("rename", {})
+    column_config = config.get("columns", {})
+    rename_dict = column_config["rename"]
+    col_to_drop = column_config["to_drop"]
 
     all_columns = set()
-    print("Scanning schemas...")
+    logger.info("Scanning schemas...")
 
     for file in files:
-        print("processing:", file, type(file))
+        logger.info("processing: %s (dtype=%s)", 
+                    file, 
+                    type(file))
         f_name = Path(file).stem
         path = f"{df_path}/{str(f_name).strip()}.csv"
 
-        df = fh.read_french_csv_smart(path, nrows=10)
+        df = dfh.read_french_csv_smart(path, nrows=10)
 
         all_columns.update(df.columns)
 
     all_columns.update(required_columns)
-    all_columns = sorted(all_columns)
+
+    # print("[DEBUG] all_columns:\n", all_columns)
+    all_col_clean = set([col for col in all_columns if col not in col_to_drop])
+    all_columns = sorted(all_col_clean)
+
     all_cols_renamed = list(set([rename_dict[col] for col in all_columns]))
-    print("Unified schema (renamed):")
-    print(all_cols_renamed)
+    logger.info("Unified schema (renamed):")
+    logger.info(all_cols_renamed)
 
     # ------------------------------
     # HARMONIZE FILES
@@ -143,9 +162,17 @@ def run_harmonize_schema(name):
 
     for file in files:
         f_name = Path(file).stem
+        year = f_name.split("_")[1]
+
+        if int(year) < start_year:
+            logger.info("Skipping file from %s (start_year=%s)", 
+                        year,
+                        start_year)
+            continue
+
         path = f"{df_path}/{str(f_name).strip()}.csv"
 
-        df = fh.read_french_csv_smart(path)
+        df = dfh.read_french_csv_smart(path)
 
         # add missing columns
         missing_cols = []
@@ -158,19 +185,21 @@ def run_harmonize_schema(name):
                 missing_cols.append(col)
 
         if missing_cols:
-            print("Added columns:", missing_cols)
+            logger.info("Added columns: %s", missing_cols)
 
         # reorder columns
         df_renamed = df_renamed[all_cols_renamed]
 
         # save
-        out_path = f"{data_processed}/{data_folder}/{str(f_name).strip()}_harmonized.parquet"
+        out_folder = f"{data_processed}/{data_folder}"
+        out_name = f"{str(f_name).strip()}_harmonized"
 
-        df_renamed.to_parquet(out_path)
+        dfh.save_df_to_parquet(df_renamed, out_name, out_folder, chunked=True)
+        # df_renamed.to_parquet(out_path)
 
-        print("Saved df to:\t", ph.shorten_path(out_path))
+        # print("Saved df to:\t", ph.shorten_path(out_path))
 
-    print("\nSchema harmonization complete.")
+    logger.info("\nSchema harmonization complete.")
 
 if __name__ == "__main__":
     harmonize_schema()

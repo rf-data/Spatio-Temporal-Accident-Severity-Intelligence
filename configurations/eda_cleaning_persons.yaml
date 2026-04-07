@@ -1,0 +1,144 @@
+## yaml-file "Places" dataset
+# ------------------------------
+# GENERAL
+# ------------------------------
+general_args:
+  summary_name: persons
+  summary_file_name: persons_EDA_summary_v1_2026-03-10_11:50
+  data_folder: Benutzer_usagers
+  schema_name: clean
+  table_name: persons
+  name_log: EDA + Cleaning (persons)
+  name_logfile: eda_clean_persons
+
+dataset:
+  topic: road accidents
+  name: persons 
+
+  structure:
+    table: True
+    image: False
+    video: False
+    time_series: True
+    geo_data: True
+    cross_file: True
+
+  # properties:
+  #   temporal_granularity: day
+  #   spatial_granularity: gps_point
+
+  expectations:
+    expected_primary_key: Num_Acc
+    # expected_row_growth: yearly_append
+    # expected_stationarity: False
+  
+  merge_behavior:
+    default: append
+    # allowed_keys:
+    #   - Num_Acc
+
+llm:
+  model: "gpt-4.1-mini"
+  temperature: 0.2
+
+agent:
+  version: 1
+  max_iterations: 2
+  reflexive: True
+
+# ------------------------------
+# EDA
+# ------------------------------
+tool_args:
+  missing_analysis: 
+    threshold: 0.5
+
+  infinite_analysis:
+    params:
+      strategy: drop
+
+  duplicate_analysis:
+    threshold: 0.01
+    grouping: []
+    params:
+      subset: []
+      keep: first
+
+  numeric_summary:
+    percentiles: [0.01, 0.05, 0.1, 0.25, 
+                  0.75, 0.9, 0.95, 0.99]
+      
+  categorical_summary:
+    top_n: 10
+    threshold: 50 
+      
+  zero_inflation_analysis:
+    threshold: 0.8
+
+# ----------------------------------
+# DATA CLEANING / SQL_UPLOAD
+# ----------------------------------
+# --> harmonize_schema + clean_from_json
+
+# eda_cleaning_persons
+columns:
+  numeric: [ID_accident, birth_year, ID_vehicle,
+            ID_person]
+  categorical: [seat_position, person_type, injury_severity
+                sex, trip_purpose, safety_equipment,
+                pedest_location, pedest_action, pedest_alone,
+                safety_equip_1, safety_equip_2, safety_equip_3]
+  to_drop: []
+  rename: 
+    Num_Acc: ID_accident
+    place: seat_position
+    catu: person_type
+    grav: injury_severity
+    sexe: sex
+    trajet: trip_purpose
+    secu: safety_equip_1
+    secu1: safety_equip_1
+    secu2: safety_equip_2
+    secu3: safety_equip_3
+    locp: pedest_location
+    actp: pedest_action
+    etatp: pedest_alone     # quo vadis?
+    an_nais: birth_year         # df["age"] = df["year"] - df["an_nais"]
+    num_veh: intra_acc_ID
+    id_vehicule: ID_vehicle
+    id_usager: ID_person
+
+
+# def extract_equipment_flags(row):
+#     values = [row["secu1"], row["secu2"], row["secu3"]]
+
+#     return {
+#         "has_seatbelt": 1 if 1 in values else 0,
+#         "has_helmet": 1 if 2 in values else 0,
+#         "has_child_seat": 1 if 3 in values else 0
+#     }
+
+# def parse_old_secu(val):
+#     if val in [-1, 0]:
+#         return {"has_equipment": 0, "used_equipment": 0}
+
+#     val = str(int(val)).zfill(2)
+
+#     return {
+#         "has_equipment": int(val[0]),
+#         "used_equipment": int(val[1])
+#     }
+
+# df["has_any_equipment"] = ...
+# df["safety_level"] = ...
+
+# df["is_protected"] = (
+#     (df["has_seatbelt"] == 1) |
+#     (df["has_helmet"] == 1)
+# )
+
+# df["n_safety_measures"] = (
+#     (df["secu1"] > 0).astype(int) +
+#     (df["secu2"] > 0).astype(int) +
+#     (df["secu3"] > 0).astype(int)
+# )

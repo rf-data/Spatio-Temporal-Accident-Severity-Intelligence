@@ -78,6 +78,7 @@ tool_args:
 # ----------------------------------
 # FEATURE ENGINEERING / SQL_UPLOAD
 # ----------------------------------
+# --> harmonize_schema
 
 Feat_Eng:
   schema_name: clean

@@ -26,13 +26,6 @@ from src.utils.split_helper import simple_time_split
 # 
 
 
-model_dict = {
-    "xgboost": build_xgboost_model,
-    "catboost": build_catboost_model,
-    "light_gbm": build_light_gbm_model,
-    "log_reg": build_logreg_model  
-    }
-
 # ------------------
 # MAIN FUNCTION
 # ------------------
@@ -108,13 +101,18 @@ def prepare_ml_data(df, general_config):
 
     return df_sort, split_data, preprocessor
 
+# def run_model(meta, data, config):
+#     
 
 def predict_by_ml_model(
+                    meta: ModelMeta,
                     data: dict, 
-                    model_name: str,
+                    # model_name: str,
                     model_config: dict, 
                     preprocess: ColumnTransformer=None
                     ):
+    model_name = meta.name
+    
     # setup logger
     logger = session.logger
     logger.info("Start ML Training '%s')", 
@@ -128,17 +126,18 @@ def predict_by_ml_model(
     X_val = data["X_val"] 
 
     # calculate pos_weight
-    weighted = model_config.get("weighted", None)
-    pos_weight = None
-    if weighted:
-        pos = y_train.sum()
-        neg = len(y_train) - pos
+    # weighted = model_config.get("weighted", None)
+    # pos_weight = None
+    # if weighted:
+    #     pos = y_train.sum()
+    #     neg = len(y_train) - pos
 
-        pos_weight = float(neg / pos)
+    #     pos_weight = float(neg / pos)
 
     # prepare pipeline
-    model_fn = model_dict[model_name]
-    model = model_fn(model_config, pos_weight)
+    # model_fn = model_dict[model_name]
+
+    model = meta.adapter.build(model_name, model_config)
     
     if preprocess:
         model_pipe = Pipeline(
@@ -153,16 +152,16 @@ def predict_by_ml_model(
                     model_name)
 
     # train model
-    model_pipe.fit(X_train, y_train)
+    model = meta.adapter.train(model_pipe, X_train, y_train)
+    # model_pipe.fit(X_train, y_train)
 
     # make forecast
-    y_pred = model_pipe.predict(X_test)
-    y_proba = model_pipe.predict_proba(X_test)[:, 1]
+    y_pred = meta.adapter.predict(model_pipe, X_test)
+    y_proba = meta.adapter.predict_proba(model_pipe, X_test)
 
     if len(X_val) > 0:
-        # data_dict["y_pred_val"] = pipe.predict(X_val)
-        y_val_pred = model_pipe.predict(X_val)
-        y_val_proba = model_pipe.predict_proba(X_val)[:, 1]
+        y_val_pred = meta.adapter.predict(model_pipe, X_val)
+        y_val_proba = meta.adapter.predict_proba(model_pipe, X_val)
 
     else:
         y_val_pred = None
@@ -172,7 +171,7 @@ def predict_by_ml_model(
                 model_name)
 
     folder = session.save_folder
-    timestamp=session.now
+    # timestamp=session.now
 
     ml_logger = ModelLogger(base_path=folder)
     ml_logger.log_run(
@@ -183,7 +182,7 @@ def predict_by_ml_model(
                     y_proba,
                     y_val_pred,
                     y_val_proba,
-                    timestamp
+                    # timestamp
                     )
 
     return model_pipe

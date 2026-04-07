@@ -25,6 +25,7 @@ from torch_geometric.loader import DataLoader
 # from torch_geometric.nn import GCNConv
 
 from src.core.session import session
+from src.core.logger import ModelLogger
 from src.utils.file_helper import get_yaml_config
 import src.utils.general_helper as gh
 import src.utils.file_helper as fh
@@ -71,7 +72,8 @@ uv pip install torch-geometric -f https://data.pyg.org/whl/torch-2.10.0+cpu.html
 
     # gh.load_env_vars()
 
-def train_n_epoch(train_data, 
+def train_n_epoch(meta, 
+                  train_data, 
                   test_data, 
                   feats,
                   gnn_config):
@@ -79,104 +81,76 @@ def train_n_epoch(train_data,
     logger = session.logger
 
     # 
-    n_epochs = int(gnn_config["n_epochs"])       # , 1)
-    learn_rate = float(gnn_config["learn_rate"])
-    weight_decay = float(gnn_config["weight_decay"])
-    opti_gnn = gnn_config["optimizer"]       #, "adam")
+    # n_epochs = int(gnn_config["n_epochs"])       # , 1)
+    # learn_rate = float(gnn_config["learn_rate"])
+    # weight_decay = float(gnn_config["weight_decay"])
+    # opti_gnn = gnn_config["optimizer"]       #, "adam")
     batch_size = int(gnn_config["batch_size"])
-    weighted = gnn_config["weighted"]
-    criterion = gnn_config["criterion"]
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # weighted = gnn_config["weighted"]
+    # criterion = gnn_config["criterion"]
+    # pred_threshold = gnn_config["pred_threshold"]
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 
     loaded_train = DataLoader(train_data, batch_size=batch_size, shuffle=False)
-    
-    data_sample = data = next(iter(loaded_train))
-    logger.info("Start building 'Simple Binary GCN'")
+    data_sample = next(iter(loaded_train))
+    logger.info("Start processing '%s'", meta.name)
     logger.info("X shape:\t%s", data_sample.x.shape)
 
     in_dim = data_sample.x.shape[1]
 
-    model, settings = gnn.build_simple_binary_gnn(gnn_config, 
-                                                  in_dim)
-    model = model.to(device)
-
-    settings.update({
-            "n_epochs": n_epochs,
-            "learn_rate": learn_rate,
-            "weight_decay": weight_decay,
-            "optimizer": opti_gnn,
-            "batch_size": batch_size,
-            "device": str(device),
-            "weighted": weighted,
-            "criterion": criterion
-            })
+    model, settings = meta.adapter.build(meta.name, 
+                                         gnn_config,
+                                         in_dim)
+    # gnn.build_simple_binary_gnn(gnn_config, 
+    #                                               in_dim)
     
-    if opti_gnn == "adam":
-        optimizer = torch.optim.Adam(
-                    model.parameters(),
-                    lr=learn_rate,
-                    weight_decay=weight_decay
-                )
-    else:
-        raise ValueError("Missing or unknown value for 'optimizer':", opti_gnn)
+    total_loss = meta.adapter.train(meta.name, 
+                                    loaded_train, 
+                                    gnn_config)
 
-    model.train()
-    total_loss = 0.0
-    
-    crit_adapted = gnn.define_criterion(loaded_train, device, gnn_config)
-    logger.info("Criterion was defined")
 
-    logger.info("Start Training 'Simple Binary GCN'")
-
-    for i, data in enumerate(loaded_train):
-        if i/50 == 0:
-            logger.info("Processing timepoint '%s'", 
-                        i)
-        # logger.info("max edge index (%s):\t%s", 
-        #             i,
-        #             data.edge_index.max())
-
-        data = data.to(device)
-        optimizer.zero_grad()
-
-        logits = model(data.x, data.edge_index)
-
-        loss = crit_adapted(logits, data.y)
-
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item()
         # print(f"[DEBUG - {i}] loss | total_loss | total_loss (rel):")
         # print(f"{loss:.4f} | {total_loss:.4f} | {total_loss/total_len:.4f}")
 
-    y_true, probs = gnn.collect_predictions(model, 
-                                            test_data, 
-                                            device)
-    results = {
-        "y_true": y_true,
-        "total_loss (abs)": total_loss,
-        "total_loss (rel)": total_loss / len(loaded_train),
-        "y_proba": probs,
-        }
+    # X_test, y_test, y_pred, y_proba 
+    prediction_dict = meta.adapter.predict()
     
     # now = session.now
     # folder = os.getenv("PATH_EVALUATED")
     # torch.save(results, f"{folder}/{now}_predictions.pt")
 
-    gnn.create_gnn_importance_df(model, 
-                                 test_data, 
-                                 feats, 
-                                 crit_adapted,
-                                 save=True)
+    folder = session.save_folder
+    # timestamp=session.now
+
+    ml_logger = ModelLogger(base_path=folder)
+    ml_logger.log_run(
+                    model,
+                    prediction_dict["X_test"],
+                    prediction_dict["y_true"],
+                    y_pred=prediction_dict["y_pred"],
+                    y_proba=prediction_dict["y_proba"],
+                    extra_params={
+                            "model_params": settings,
+                            "y_logits": prediction_dict["y_logits"],
+                            "total loss (abs)": total_loss,
+                            "total loss (rel)": total_loss / len(loaded_train)
+                            }
+                    )
+    
+    gnn.create_gnn_importance_df(
+                            model, 
+                            test_data, 
+                            feats, 
+                            crit_adapted,
+                            save=True
+                            )
     # print("y mean:", np.mean(y_true_all))   # .mean()
     # print("preds_50_gnn mean:", np.round(np.mean(preds_50_gnn), 3))
     # print("preds_90_gnn mean:", np.round(np.mean(preds_90_gnn), 3))
     # print("pred_base mean:", preds_base.float().mean())
     
-    
-    return results, settings
+    return # results, settings
 
 
 def predict_by_simple_bin_gcn(
@@ -201,12 +175,12 @@ def predict_by_simple_bin_gcn(
                                                 )
 
     # gnn_config = config.get("simple_bin_gcn", {})
-    results, meta = train_n_epoch(train_data, test_data, feats, gnn_config)
-    meta["time"] = now 
+    train_n_epoch(train_data, test_data, feats, gnn_config)
+    # meta["time"] = now 
     
     # gnn_model, settings = build_logreg_model(config)
     
-    return results, meta
+    return  # results, meta
 
 
 @click.command()

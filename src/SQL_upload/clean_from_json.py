@@ -10,8 +10,11 @@ import click
 import src.utils.file_helper as fh
 import src.utils.general_helper as gh
 import src.utils.path_helper as ph
+import src.utils.df_helper as dfh
 
 from src.agentic_AI.report.raw_data_report import load_eda_summary
+from src.core.session import session
+from src.core.logger import create_logger
 
 
 def apply_drop_duplicates(df, action):
@@ -96,19 +99,29 @@ def apply_kurtosis(df, action):
     return df
 
 
-def adapt_col_dtypes(df, config):
+def adapt_col_dtypes(df, column_config):
+    # setup logger
+    logger = session.logger
+
+    # 
     df_corr = df.copy()
 
-    num_cols = config.get("columns", {}).get("numeric", [])
-    cat_cols = config.get("columns", {}).get("categorical", [])
+    num_cols = column_config.get("numeric", [])
+    cat_cols = column_config.get("categorical", [])
 
     if not num_cols and not cat_cols:
-        print("Apply dtype_conversion to df.columns:", df_corr.columns)
+        logger.info("""
+                    No column specified as 'numeric' or 'categorical'. 
+                    Start converting all df.columns to numeric: %s
+                    """, 
+                    df_corr.columns)
         for col in df_corr.columns:
             try:
                 df_corr[col] = pd.to_numeric(df_corr[col])
             except Exception as e:
-                print(f"Column '{col}' not convertible to numeric dtype:\n{e}")        
+                logger.info("Column '%s' not convertible to numeric dtype:\n%s",
+                            col,
+                            e)        
                 pass
 
     # numeric
@@ -116,7 +129,7 @@ def adapt_col_dtypes(df, config):
         if col not in df_corr.columns:
             continue
         
-        print("Apply dtype_conversion to numeric_columns:", num_cols)
+        logger.info("Start dtype_conversion to numeric_columns: %s", num_cols)
         
         df_corr[col] = pd.to_numeric(df_corr[col], errors="coerce")
 
@@ -125,7 +138,8 @@ def adapt_col_dtypes(df, config):
         if col not in df_corr.columns:
             continue
         
-        print("Apply dtype_conversion to categorical columns:", cat_cols)
+        logger.info("Start dtype_conversion to categorical columns: %s", 
+                    cat_cols)
                
         df_corr[col] = df_corr[col].astype("string")
 
@@ -164,24 +178,41 @@ def run_clean_from_json(name):
     
     config = fh.get_yaml_config(name)
 
-    arg_dict = config.get("general_args", {})
-
-    data_folder = Path(arg_dict.get("data_folder"))
+    general_config = config.get("general_args", {})
+    log_name = general_config["name_log"]
+    name_logfile = general_config["name_logfile"]
+    selected_years = general_config["selected_years"]
+    data_folder = Path(general_config["data_folder"])
     df_path = Path(f"{data_processed}/{data_folder}")
 
-    report_dict = load_eda_summary(config)
+    report_dict = load_eda_summary(general_config)
     processing = report_dict["processing"]
+
+    column_config = config.get("columns", {})
+
+    # setup logger 
+    logger = create_logger(name=log_name, file_name=name_logfile)
+    session.logger = logger
 
     for file, actions in processing.items():
 
         f_name = Path(file).stem
+        year = f_name.split("_")[1]
+        
+        if int(year) not in selected_years:
+            logger.info("Skipping file from %s (start_year=%s)", 
+                        year,
+                        selected_years)
+            continue
+
         path = f"{df_path}/{str(f_name).strip()}_harmonized.parquet"
 
-        print("Cleaning:",  ph.shorten_path(path))
+        logger.info("Cleaning: %s",  
+                    ph.shorten_path(path))
 
         df = pd.read_parquet(path)
 
-        df_corr = adapt_col_dtypes(df, config)
+        df_corr = adapt_col_dtypes(df, column_config)
 
         for action in actions:
             action_name = action.get("action")
@@ -189,14 +220,19 @@ def run_clean_from_json(name):
             handler = ACTION_DISPATCH.get(action_name)
 
             if not handler:
-                print(f"WARNING: No runtime handler for {action_name}")
+                logger.warning("No runtime handler for %s", 
+                               action_name)
                 continue
 
             df_corr = handler(df_corr, action)
 
-        path_clean = f"{df_path}/{str(f_name).strip()}_clean.parquet"
-        df_corr.to_parquet(path_clean)
+        # save
+        out_folder = f"{df_path}"
+        out_name = f"{str(f_name).strip()}_clean"
 
+        dfh.save_df_to_parquet(df_corr, out_name, out_folder, chunked=True)
+
+    logger.info("\nCleaning dfs complete.")
 
 if __name__ == "__main__":
     clean_from_json()
